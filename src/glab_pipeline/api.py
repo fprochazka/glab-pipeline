@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from typing import Any
+from urllib.parse import urlencode
 
 
 def _parse_paginated_json(text: str) -> list:
@@ -39,13 +40,23 @@ def glab_api(
     endpoint: str,
     *,
     method: str | None = None,
+    query: dict[str, str] | None = None,
     fields: dict[str, str] | None = None,
     raw_fields: dict[str, str] | None = None,
     json_body: dict | None = None,
     hostname: str | None = None,
     paginate: bool = False,
 ) -> Any:
-    """Call glab api and return parsed JSON response."""
+    """Call glab api and return parsed JSON response.
+
+    `query` is URL-encoded and appended to the endpoint — use it for GET
+    parameters. `fields`/`raw_fields` go through glab's -F/-f flags, which
+    glab sends as POST body even on GET requests (where they're silently
+    ignored) — so don't use them for query strings.
+    """
+    if query:
+        sep = "&" if "?" in endpoint else "?"
+        endpoint = f"{endpoint}{sep}{urlencode(query)}"
     cmd = ["glab", "api", endpoint]
     if method:
         cmd.extend(["-X", method])

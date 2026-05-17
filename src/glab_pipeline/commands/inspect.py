@@ -304,7 +304,7 @@ def run(args: argparse.Namespace) -> int:
     jobs_raw = glab_api(
         f"projects/{ctx.project_id}/pipelines/{ctx.pipeline_id}/jobs",
         paginate=True,
-        fields={"per_page": "100", "include_retried": "true"},
+        query={"per_page": "100", "include_retried": "true"},
         hostname=ctx.hostname,
     ) or []
     _write_json(output_dir / "jobs.json", jobs_raw)
@@ -314,7 +314,7 @@ def run(args: argparse.Namespace) -> int:
     bridges_raw = glab_api(
         f"projects/{ctx.project_id}/pipelines/{ctx.pipeline_id}/bridges",
         paginate=True,
-        fields={"per_page": "100"},
+        query={"per_page": "100"},
         hostname=ctx.hostname,
     ) or []
     if bridges_raw:
@@ -336,7 +336,7 @@ def run(args: argparse.Namespace) -> int:
     def fetch_lint():
         return glab_api(
             f"projects/{ctx.project_id}/ci/lint",
-            fields={
+            query={
                 "content_ref": ctx.sha,
                 "dry_run": "true",
                 "include_jobs": "true",
