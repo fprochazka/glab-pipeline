@@ -10,15 +10,25 @@ Conditional fetches keep dumps lean — `ci/lint` + `merged.yml` are only fetche
 
 ## Installation
 
-Clone the repo and install as an editable [uv tool](https://docs.astral.sh/uv/concepts/tools/):
+Install as a [uv tool](https://docs.astral.sh/uv/concepts/tools/):
+
+```bash
+uv tool install glab-pipeline
+```
+
+To upgrade later:
+
+```bash
+uv tool upgrade glab-pipeline
+```
+
+For local development, clone and install editable instead:
 
 ```bash
 git clone https://github.com/fprochazka/glab-pipeline.git
 cd glab-pipeline
 uv tool install --editable .
 ```
-
-Edits to `src/` are picked up immediately. To upgrade, `git pull` in the clone directory.
 
 ### Claude Code plugin
 
@@ -32,9 +42,10 @@ claude plugin marketplace add fprochazka/glab-pipeline
 claude plugin install glab-pipeline@fprochazka-glab-pipeline
 ```
 
-To upgrade after a new release, `git pull` in your clone (the editable install picks up changes automatically), then:
+To upgrade after a new release:
 
 ```bash
+uv tool upgrade glab-pipeline
 claude plugin marketplace update fprochazka-glab-pipeline
 claude plugin update glab-pipeline@fprochazka-glab-pipeline
 ```
