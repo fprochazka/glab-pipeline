@@ -399,13 +399,21 @@ def run(args: argparse.Namespace) -> int:
     bridges_by_id = {b.id: b for b in bridges}
 
     def fetch_lint():
+        # dry_run_ref sets the branch/tag context used when simulating rules.
+        # Skip it if pipeline.ref isn't a plain branch name (e.g.
+        # `refs/merge-requests/N/head` for MR pipelines) — lint expects a
+        # branch/tag, and falling back to the project default is better than
+        # passing something it rejects.
+        query = {
+            "content_ref": ctx.sha,
+            "dry_run": "true",
+            "include_jobs": "true",
+        }
+        if ctx.ref and not ctx.ref.startswith("refs/"):
+            query["dry_run_ref"] = ctx.ref
         return glab_api(
             f"projects/{ctx.project_id}/ci/lint",
-            query={
-                "content_ref": ctx.sha,
-                "dry_run": "true",
-                "include_jobs": "true",
-            },
+            query=query,
             hostname=ctx.hostname,
         )
 
