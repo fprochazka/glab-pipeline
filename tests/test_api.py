@@ -30,7 +30,7 @@ def test_query_is_appended_to_endpoint_when_no_existing_query():
 
 def test_query_is_appended_with_ampersand_when_endpoint_already_has_query():
     with patch("glab_pipeline.api.subprocess.run") as run:
-        run.return_value = _make_run_result(stdout='{}')
+        run.return_value = _make_run_result(stdout="{}")
         glab_api("projects/1/ci/lint?foo=bar", query={"dry_run": "true"})
         endpoint = run.call_args.args[0][2]
         assert endpoint == "projects/1/ci/lint?foo=bar&dry_run=true"
@@ -38,7 +38,7 @@ def test_query_is_appended_with_ampersand_when_endpoint_already_has_query():
 
 def test_query_values_are_url_encoded():
     with patch("glab_pipeline.api.subprocess.run") as run:
-        run.return_value = _make_run_result(stdout='{}')
+        run.return_value = _make_run_result(stdout="{}")
         glab_api("projects/1/x", query={"ref": "feature/foo bar"})
         endpoint = run.call_args.args[0][2]
         assert "ref=feature%2Ffoo+bar" in endpoint
@@ -46,7 +46,7 @@ def test_query_values_are_url_encoded():
 
 def test_no_query_means_endpoint_unchanged():
     with patch("glab_pipeline.api.subprocess.run") as run:
-        run.return_value = _make_run_result(stdout='{}')
+        run.return_value = _make_run_result(stdout="{}")
         glab_api("projects/1/pipelines/2")
         endpoint = run.call_args.args[0][2]
         assert endpoint == "projects/1/pipelines/2"

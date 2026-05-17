@@ -66,9 +66,7 @@ def test_yaml_broken_summary(sample_pipeline_yaml_broken):
     assert "→ lint.json, merged.yml" in out
 
 
-def test_script_failure_no_yaml_hint(
-    sample_pipeline_failed, sample_job_failed_script
-):
+def test_script_failure_no_yaml_hint(sample_pipeline_failed, sample_job_failed_script):
     p = parse_pipeline(sample_pipeline_failed)
     j = parse_job(sample_job_failed_script)
     out = _fmt(_make(p, [j]))
@@ -79,9 +77,7 @@ def test_script_failure_no_yaml_hint(
     assert "likely YAML/needs issue" not in out
 
 
-def test_missing_dep_has_yaml_hint(
-    sample_pipeline_failed, sample_job_failed_missing_dep
-):
+def test_missing_dep_has_yaml_hint(sample_pipeline_failed, sample_job_failed_missing_dep):
     p = parse_pipeline(sample_pipeline_failed)
     j = parse_job(sample_job_failed_missing_dep)
     out = _fmt(_make(p, [j], has_lint_file=True))
@@ -90,9 +86,7 @@ def test_missing_dep_has_yaml_hint(
     assert "→ likely YAML/needs issue, see lint.json" in out
 
 
-def test_failed_bridge_summary(
-    sample_pipeline_failed, sample_bridge_failed
-):
+def test_failed_bridge_summary(sample_pipeline_failed, sample_bridge_failed):
     p = parse_pipeline(sample_pipeline_failed)
     b = parse_bridge(sample_bridge_failed)
     output_dir = Path("/tmp/g")
@@ -125,14 +119,10 @@ def test_test_report_counts(sample_pipeline_failed, sample_job_failed_script):
     assert "Test Failures (12 failed / 1843 total):" in out
 
 
-def test_test_report_without_totals_fallback(
-    sample_pipeline_failed, sample_job_failed_script
-):
+def test_test_report_without_totals_fallback(sample_pipeline_failed, sample_job_failed_script):
     p = parse_pipeline(sample_pipeline_failed)
     j = parse_job(sample_job_failed_script)
-    out = _fmt(
-        _make(p, [j], has_test_report_file=True, test_report={})
-    )
+    out = _fmt(_make(p, [j], has_test_report_file=True, test_report={}))
     assert "Test failures present — see test-report.json" in out
 
 
@@ -170,9 +160,7 @@ def test_mixed_summary_all_sections_in_order(
     assert idx_jobs < idx_down < idx_test
 
 
-def test_bridges_listed_in_files_created(
-    sample_pipeline_success, sample_bridge_success
-):
+def test_bridges_listed_in_files_created(sample_pipeline_success, sample_bridge_success):
     p = parse_pipeline(sample_pipeline_success)
     b = parse_bridge(sample_bridge_success)
     out = _fmt(_make(p, bridges=[b]))

@@ -29,33 +29,25 @@ def _ns(**kwargs) -> argparse.Namespace:
 
 class TestParsePipelineUrl:
     def test_simple_url(self) -> None:
-        host, path, pid = _parse_pipeline_url(
-            "https://gitlab.com/group/project/-/pipelines/123"
-        )
+        host, path, pid = _parse_pipeline_url("https://gitlab.com/group/project/-/pipelines/123")
         assert host == "gitlab.com"
         assert path == "group/project"
         assert pid == 123
 
     def test_nested_groups(self) -> None:
-        host, path, pid = _parse_pipeline_url(
-            "https://gitlab.example.com/org/team/sub/repo/-/pipelines/9999"
-        )
+        host, path, pid = _parse_pipeline_url("https://gitlab.example.com/org/team/sub/repo/-/pipelines/9999")
         assert host == "gitlab.example.com"
         assert path == "org/team/sub/repo"
         assert pid == 9999
 
     def test_trailing_slash(self) -> None:
-        host, path, pid = _parse_pipeline_url(
-            "https://gitlab.com/group/project/-/pipelines/42/"
-        )
+        host, path, pid = _parse_pipeline_url("https://gitlab.com/group/project/-/pipelines/42/")
         assert host == "gitlab.com"
         assert path == "group/project"
         assert pid == 42
 
     def test_http_scheme(self) -> None:
-        host, path, pid = _parse_pipeline_url(
-            "http://gitlab.local/team/app/-/pipelines/7"
-        )
+        host, path, pid = _parse_pipeline_url("http://gitlab.local/team/app/-/pipelines/7")
         assert host == "gitlab.local"
         assert path == "team/app"
         assert pid == 7
@@ -71,33 +63,25 @@ class TestParsePipelineUrl:
 
 class TestParseMrUrl:
     def test_simple_url(self) -> None:
-        host, path, iid = _parse_mr_url(
-            "https://gitlab.com/group/project/-/merge_requests/42"
-        )
+        host, path, iid = _parse_mr_url("https://gitlab.com/group/project/-/merge_requests/42")
         assert host == "gitlab.com"
         assert path == "group/project"
         assert iid == 42
 
     def test_nested_groups(self) -> None:
-        host, path, iid = _parse_mr_url(
-            "https://gitlab.example.com/org/team/sub/repo/-/merge_requests/99"
-        )
+        host, path, iid = _parse_mr_url("https://gitlab.example.com/org/team/sub/repo/-/merge_requests/99")
         assert host == "gitlab.example.com"
         assert path == "org/team/sub/repo"
         assert iid == 99
 
     def test_trailing_slash(self) -> None:
-        host, path, iid = _parse_mr_url(
-            "https://gitlab.com/g/p/-/merge_requests/1/"
-        )
+        host, path, iid = _parse_mr_url("https://gitlab.com/g/p/-/merge_requests/1/")
         assert host == "gitlab.com"
         assert path == "g/p"
         assert iid == 1
 
     def test_http_scheme(self) -> None:
-        host, path, iid = _parse_mr_url(
-            "http://gitlab.local/team/app/-/merge_requests/5"
-        )
+        host, path, iid = _parse_mr_url("http://gitlab.local/team/app/-/merge_requests/5")
         assert host == "gitlab.local"
         assert path == "team/app"
         assert iid == 5
@@ -109,14 +93,10 @@ class TestParseMrUrl:
 
 class TestResolvePipelineContextByUrl:
     @patch("glab_pipeline.context.glab_api")
-    def test_resolves_from_pipeline_url(
-        self, mock_api, sample_pipeline_failed: dict
-    ) -> None:
+    def test_resolves_from_pipeline_url(self, mock_api, sample_pipeline_failed: dict) -> None:
         # First call: project lookup. Second call: pipeline fetch.
         mock_api.side_effect = [{"id": 7}, sample_pipeline_failed]
-        args = _ns(
-            pipeline_url="https://gitlab.example.com/foo/bar/-/pipelines/48"
-        )
+        args = _ns(pipeline_url="https://gitlab.example.com/foo/bar/-/pipelines/48")
         ctx = resolve_pipeline_context(args)
 
         assert isinstance(ctx, PipelineContext)
@@ -136,25 +116,17 @@ class TestResolvePipelineContextByUrl:
         assert calls[1].kwargs == {"hostname": "gitlab.example.com"}
 
     @patch("glab_pipeline.context.glab_api")
-    def test_resolves_nested_groups_from_pipeline_url(
-        self, mock_api, sample_pipeline_success: dict
-    ) -> None:
+    def test_resolves_nested_groups_from_pipeline_url(self, mock_api, sample_pipeline_success: dict) -> None:
         mock_api.side_effect = [{"id": 9}, sample_pipeline_success]
-        args = _ns(
-            pipeline_url="https://gitlab.example.com/org/team/sub/repo/-/pipelines/47"
-        )
+        args = _ns(pipeline_url="https://gitlab.example.com/org/team/sub/repo/-/pipelines/47")
         ctx = resolve_pipeline_context(args)
         assert ctx.project_path == "org/team/sub/repo"
-        assert mock_api.call_args_list[0].args == (
-            "projects/org%2Fteam%2Fsub%2Frepo",
-        )
+        assert mock_api.call_args_list[0].args == ("projects/org%2Fteam%2Fsub%2Frepo",)
 
 
 class TestResolvePipelineContextById:
     @patch("glab_pipeline.context.glab_api")
-    def test_with_hostname_and_project(
-        self, mock_api, sample_pipeline_failed: dict
-    ) -> None:
+    def test_with_hostname_and_project(self, mock_api, sample_pipeline_failed: dict) -> None:
         mock_api.side_effect = [{"id": 7}, sample_pipeline_failed]
         args = _ns(
             pipeline_id=48,
@@ -186,9 +158,7 @@ class TestResolvePipelineContextById:
         assert ctx.project_path == "foo/bar"
         assert ctx.hostname == "gitlab.example.com"
         assert ctx.pipeline_id == 48
-        mock_api.assert_called_once_with(
-            "projects/1/pipelines/48", hostname="gitlab.example.com"
-        )
+        mock_api.assert_called_once_with("projects/1/pipelines/48", hostname="gitlab.example.com")
 
 
 class TestResolvePipelineContextByMr:
@@ -205,9 +175,7 @@ class TestResolvePipelineContextByMr:
             sample_mr_with_head_pipeline,
             sample_pipeline_failed,
         ]
-        args = _ns(
-            mr_url="https://gitlab.example.com/foo/bar/-/merge_requests/42"
-        )
+        args = _ns(mr_url="https://gitlab.example.com/foo/bar/-/merge_requests/42")
         ctx = resolve_pipeline_context(args)
         assert ctx.pipeline_id == 48
         assert ctx.project_path == "foo/bar"
@@ -229,9 +197,7 @@ class TestResolvePipelineContextByMr:
             sample_mr_with_head_pipeline,
             sample_pipeline_failed,
         ]
-        args = _ns(
-            mr_iid=42, hostname="gitlab.example.com", project="foo/bar"
-        )
+        args = _ns(mr_iid=42, hostname="gitlab.example.com", project="foo/bar")
         ctx = resolve_pipeline_context(args)
         assert ctx.pipeline_id == 48
 
@@ -241,15 +207,11 @@ class TestResolvePipelineContextByMr:
             resolve_pipeline_context(args)
 
     @patch("glab_pipeline.context.glab_api")
-    def test_mr_with_no_head_pipeline_raises(
-        self, mock_api, sample_mr_with_head_pipeline: dict
-    ) -> None:
+    def test_mr_with_no_head_pipeline_raises(self, mock_api, sample_mr_with_head_pipeline: dict) -> None:
         mr = dict(sample_mr_with_head_pipeline)
         mr["head_pipeline"] = None
         mock_api.side_effect = [{"id": 1}, mr]
-        args = _ns(
-            mr_url="https://gitlab.example.com/foo/bar/-/merge_requests/42"
-        )
+        args = _ns(mr_url="https://gitlab.example.com/foo/bar/-/merge_requests/42")
         with pytest.raises(ValueError, match="No pipeline found for MR"):
             resolve_pipeline_context(args)
 
@@ -272,14 +234,10 @@ class TestResolvePipelineContextFallback:
         assert ctx.project_id == 1
         assert ctx.project_path == "foo/bar"
         assert ctx.hostname == "gitlab.example.com"
-        mock_api.assert_called_once_with(
-            "projects/1/pipelines/48", hostname="gitlab.example.com"
-        )
+        mock_api.assert_called_once_with("projects/1/pipelines/48", hostname="gitlab.example.com")
 
     @patch("glab_pipeline.context.glab_mr_view_json")
-    def test_fallback_no_head_pipeline_raises(
-        self, mock_mr_view, sample_mr_with_head_pipeline: dict
-    ) -> None:
+    def test_fallback_no_head_pipeline_raises(self, mock_mr_view, sample_mr_with_head_pipeline: dict) -> None:
         mr = dict(sample_mr_with_head_pipeline)
         mr["head_pipeline"] = None
         mock_mr_view.return_value = mr

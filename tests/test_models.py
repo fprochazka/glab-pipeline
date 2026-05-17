@@ -159,9 +159,7 @@ class TestParseLists:
     def test_parse_jobs_empty(self) -> None:
         assert parse_jobs([]) == []
 
-    def test_parse_bridges_preserves_order(
-        self, sample_bridge_success: dict, sample_bridge_failed: dict
-    ) -> None:
+    def test_parse_bridges_preserves_order(self, sample_bridge_success: dict, sample_bridge_failed: dict) -> None:
         bridges = parse_bridges([sample_bridge_failed, sample_bridge_success])
         assert [b.id for b in bridges] == [2002, 2001]
 

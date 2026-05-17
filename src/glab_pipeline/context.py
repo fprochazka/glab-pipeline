@@ -91,13 +91,9 @@ def resolve_pipeline_context(args: argparse.Namespace) -> PipelineContext:
     pipeline_url = getattr(args, "pipeline_url", None)
     if pipeline_url:
         hostname, project_path, pipeline_id = _parse_pipeline_url(pipeline_url)
-        project_data = glab_api(
-            f"projects/{quote(project_path, safe='')}", hostname=hostname
-        )
+        project_data = glab_api(f"projects/{quote(project_path, safe='')}", hostname=hostname)
         project_id = project_data["id"]
-        pipeline_raw = glab_api(
-            f"projects/{project_id}/pipelines/{pipeline_id}", hostname=hostname
-        )
+        pipeline_raw = glab_api(f"projects/{project_id}/pipelines/{pipeline_id}", hostname=hostname)
         return _build_pipeline_context(
             hostname=hostname,
             project_id=project_id,
@@ -111,18 +107,14 @@ def resolve_pipeline_context(args: argparse.Namespace) -> PipelineContext:
         hostname = getattr(args, "hostname", None)
         project = getattr(args, "project", None)
         if hostname and project:
-            project_data = glab_api(
-                f"projects/{quote(project, safe='')}", hostname=hostname
-            )
+            project_data = glab_api(f"projects/{quote(project, safe='')}", hostname=hostname)
             project_id = project_data["id"]
             project_path = project
         else:
             mr_data = glab_mr_view_json(hostname=hostname)
             hostname, project_path = _project_path_from_web_url(mr_data["web_url"])
             project_id = mr_data["project_id"]
-        pipeline_raw = glab_api(
-            f"projects/{project_id}/pipelines/{pipeline_id}", hostname=hostname
-        )
+        pipeline_raw = glab_api(f"projects/{project_id}/pipelines/{pipeline_id}", hostname=hostname)
         return _build_pipeline_context(
             hostname=hostname,
             project_id=project_id,
@@ -140,25 +132,15 @@ def resolve_pipeline_context(args: argparse.Namespace) -> PipelineContext:
             hostname = getattr(args, "hostname", None)
             project_path = getattr(args, "project", None)
             if not (hostname and project_path):
-                raise ValueError(
-                    "--mr-iid requires --hostname and --project (or use --mr-url)"
-                )
-        project_data = glab_api(
-            f"projects/{quote(project_path, safe='')}", hostname=hostname
-        )
+                raise ValueError("--mr-iid requires --hostname and --project (or use --mr-url)")
+        project_data = glab_api(f"projects/{quote(project_path, safe='')}", hostname=hostname)
         project_id = project_data["id"]
-        mr_data = glab_api(
-            f"projects/{project_id}/merge_requests/{mr_iid}", hostname=hostname
-        )
+        mr_data = glab_api(f"projects/{project_id}/merge_requests/{mr_iid}", hostname=hostname)
         head_pipeline = mr_data.get("head_pipeline")
         if not head_pipeline:
-            raise ValueError(
-                f"No pipeline found for MR !{mr_iid} in {project_path}"
-            )
+            raise ValueError(f"No pipeline found for MR !{mr_iid} in {project_path}")
         pipeline_id = head_pipeline["id"]
-        pipeline_raw = glab_api(
-            f"projects/{project_id}/pipelines/{pipeline_id}", hostname=hostname
-        )
+        pipeline_raw = glab_api(f"projects/{project_id}/pipelines/{pipeline_id}", hostname=hostname)
         return _build_pipeline_context(
             hostname=hostname,
             project_id=project_id,
@@ -175,9 +157,7 @@ def resolve_pipeline_context(args: argparse.Namespace) -> PipelineContext:
     hostname, project_path = _project_path_from_web_url(mr_data["web_url"])
     project_id = mr_data["project_id"]
     pipeline_id = head_pipeline["id"]
-    pipeline_raw = glab_api(
-        f"projects/{project_id}/pipelines/{pipeline_id}", hostname=hostname
-    )
+    pipeline_raw = glab_api(f"projects/{project_id}/pipelines/{pipeline_id}", hostname=hostname)
     return _build_pipeline_context(
         hostname=hostname,
         project_id=project_id,

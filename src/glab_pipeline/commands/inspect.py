@@ -1,4 +1,5 @@
 """inspect — dump full pipeline state + problem-driven summary."""
+
 from __future__ import annotations
 
 import argparse
@@ -38,9 +39,7 @@ YAML_HINT_REASONS = frozenset(
 )
 
 TEST_STAGE_RE = re.compile(r"test|spec|qa", re.IGNORECASE)
-TEST_NAME_RE = re.compile(
-    r"\b(test|spec|rspec|pytest|jest|vitest|phpunit)\b", re.IGNORECASE
-)
+TEST_NAME_RE = re.compile(r"\b(test|spec|rspec|pytest|jest|vitest|phpunit)\b", re.IGNORECASE)
 
 # Bridge statuses that are NOT considered failures.
 _BRIDGE_OK_STATUSES = frozenset({"success", "manual", "skipped"})
@@ -75,22 +74,11 @@ def decide_extras(
     full: bool = False,
 ) -> ExtrasPlan:
     """Decide which conditional fetches to perform based on pipeline state."""
-    yaml_hint_jobs = tuple(
-        j.id for j in jobs if j.failure_reason in YAML_HINT_REASONS
-    )
-    failed_test_jobs = tuple(
-        j.id for j in jobs if j.status == "failed" and is_test_job(j)
-    )
-    failed_bridges = tuple(
-        b.id for b in bridges if b.status not in _BRIDGE_OK_STATUSES
-    )
+    yaml_hint_jobs = tuple(j.id for j in jobs if j.failure_reason in YAML_HINT_REASONS)
+    failed_test_jobs = tuple(j.id for j in jobs if j.status == "failed" and is_test_job(j))
+    failed_bridges = tuple(b.id for b in bridges if b.status not in _BRIDGE_OK_STATUSES)
 
-    need_lint = bool(
-        full
-        or pipeline.yaml_errors
-        or len(jobs) == 0
-        or yaml_hint_jobs
-    )
+    need_lint = bool(full or pipeline.yaml_errors or len(jobs) == 0 or yaml_hint_jobs)
     need_test_report = bool(full or failed_test_jobs)
     need_downstream = bool(full or failed_bridges)
 
@@ -240,21 +228,13 @@ def format_summary(summary: dict[str, Any]) -> str:
     short_sha = p["sha_short"]
     source = p["source"] or "unknown"
     lines.append(f"Ref:     {p['ref']}   SHA: {short_sha}   Source: {source}")
-    lines.append(
-        f"Created: {p['created_at']}   Duration: {p['duration_human']}"
-    )
+    lines.append(f"Created: {p['created_at']}   Duration: {p['duration_human']}")
     lines.append("")
     lines.append("Files Created:")
     lines.append(f"  Pipeline:   {files['pipeline']}")
-    lines.append(
-        f"  Jobs:       {files['jobs']}   "
-        f"({files['jobs_count']} jobs, all logs in job-logs/)"
-    )
+    lines.append(f"  Jobs:       {files['jobs']}   ({files['jobs_count']} jobs, all logs in job-logs/)")
     if "bridges" in files:
-        lines.append(
-            f"  Bridges:    {files['bridges']}   "
-            f"({files['bridges_count']} bridges)"
-        )
+        lines.append(f"  Bridges:    {files['bridges']}   ({files['bridges_count']} bridges)")
     lines.append("")
     lines.append(f"All files in: {output_dir}/")
 
@@ -277,9 +257,7 @@ def format_summary(summary: dict[str, Any]) -> str:
         lines.append(f"Failed Jobs ({len(failed_jobs)}):")
         for j in failed_jobs:
             reason = j["failure_reason"] or "—"
-            lines.append(
-                f"  {j['name']}  (stage={j['stage']}, reason={reason})"
-            )
+            lines.append(f"  {j['name']}  (stage={j['stage']}, reason={reason})")
             if j["log"] is not None:
                 lines.append(f"    Log: {j['log']}")
             if j["yaml_hint"]:
@@ -289,15 +267,11 @@ def format_summary(summary: dict[str, Any]) -> str:
     failed_downstream = summary["failed_downstream"]
     if failed_downstream:
         lines.append("")
-        lines.append(
-            f"Failed Downstream Pipelines ({len(failed_downstream)}):"
-        )
+        lines.append(f"Failed Downstream Pipelines ({len(failed_downstream)}):")
         for d in failed_downstream:
             dpid = d["downstream_pipeline_id"] if d["downstream_pipeline_id"] is not None else "—"
             dpstatus = d["downstream_status"] if d["downstream_status"] is not None else "—"
-            lines.append(
-                f"  {d['bridge_name']} → pipeline {dpid} ({dpstatus})"
-            )
+            lines.append(f"  {d['bridge_name']} → pipeline {dpid} ({dpstatus})")
             if d["detail"] is not None:
                 lines.append(f"    Detail: {d['detail']}")
 
@@ -306,10 +280,7 @@ def format_summary(summary: dict[str, Any]) -> str:
         tf = summary["test_failures"]
         if tf is not None:
             lines.append("")
-            lines.append(
-                f"Test Failures ({tf['failed']} failed / "
-                f"{tf['total']} total):"
-            )
+            lines.append(f"Test Failures ({tf['failed']} failed / {tf['total']} total):")
             lines.append("  See test-report.json")
         else:
             lines.append("")
@@ -323,9 +294,7 @@ def format_summary(summary: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _fetch_trace_raw(
-    project_id: int, job_id: int, hostname: str | None
-) -> str:
+def _fetch_trace_raw(project_id: int, job_id: int, hostname: str | None) -> str:
     """Fetch a job's trace via `glab api` subprocess (plain text endpoint).
 
     Implements retry+backoff. Raises GlabApiError on final failure so the
@@ -339,9 +308,7 @@ def _fetch_trace_raw(
     last_stderr = ""
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=60
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         except subprocess.TimeoutExpired as exc:
             last_stderr = f"timeout after 60s: {exc}"
         else:
@@ -364,10 +331,7 @@ def _write_json(path: Path, data) -> None:
 
 
 def _job_log_name(job: Job) -> str:
-    return (
-        f"{sanitize_filename_part(job.stage)}-"
-        f"{sanitize_filename_part(job.name)}-{job.id}.log"
-    )
+    return f"{sanitize_filename_part(job.stage)}-{sanitize_filename_part(job.name)}-{job.id}.log"
 
 
 def _downstream_filename(bridge: Bridge, dpid: int) -> str:
@@ -388,10 +352,7 @@ def run(args: argparse.Namespace) -> int:
         output_dir = Path(args.output_dir)
     else:
         ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = (
-            Path(tempfile.gettempdir())
-            / f"glab-pipeline-{ctx.pipeline_id}-{ts}"
-        )
+        output_dir = Path(tempfile.gettempdir()) / f"glab-pipeline-{ctx.pipeline_id}-{ts}"
     job_logs_dir = output_dir / "job-logs"
     job_logs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -399,22 +360,28 @@ def run(args: argparse.Namespace) -> int:
     _write_json(output_dir / "pipeline.json", ctx.pipeline_raw)
 
     # 2. jobs.json
-    jobs_raw = glab_api(
-        f"projects/{ctx.project_id}/pipelines/{ctx.pipeline_id}/jobs",
-        paginate=True,
-        query={"per_page": "100", "include_retried": "true"},
-        hostname=ctx.hostname,
-    ) or []
+    jobs_raw = (
+        glab_api(
+            f"projects/{ctx.project_id}/pipelines/{ctx.pipeline_id}/jobs",
+            paginate=True,
+            query={"per_page": "100", "include_retried": "true"},
+            hostname=ctx.hostname,
+        )
+        or []
+    )
     _write_json(output_dir / "jobs.json", jobs_raw)
     jobs = parse_jobs(jobs_raw)
 
     # 3. bridges.json (optional)
-    bridges_raw = glab_api(
-        f"projects/{ctx.project_id}/pipelines/{ctx.pipeline_id}/bridges",
-        paginate=True,
-        query={"per_page": "100"},
-        hostname=ctx.hostname,
-    ) or []
+    bridges_raw = (
+        glab_api(
+            f"projects/{ctx.project_id}/pipelines/{ctx.pipeline_id}/bridges",
+            paginate=True,
+            query={"per_page": "100"},
+            hostname=ctx.hostname,
+        )
+        or []
+    )
     if bridges_raw:
         _write_json(output_dir / "bridges.json", bridges_raw)
     bridges = parse_bridges(bridges_raw)
@@ -460,9 +427,7 @@ def run(args: argparse.Namespace) -> int:
         )
         return bridge, dpid, data
 
-    with concurrent.futures.ThreadPoolExecutor(
-        max_workers=MAX_PARALLEL
-    ) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_PARALLEL) as ex:
         futures: dict[concurrent.futures.Future, str] = {}
         if plan.need_lint:
             futures[ex.submit(fetch_lint)] = "lint"
@@ -513,17 +478,13 @@ def run(args: argparse.Namespace) -> int:
         except GlabApiError as exc:
             return job, "", str(exc)
 
-    with concurrent.futures.ThreadPoolExecutor(
-        max_workers=MAX_PARALLEL
-    ) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_PARALLEL) as ex:
         for job, text, err in ex.map(fetch_trace, jobs):
             log_path = job_logs_dir / _job_log_name(job)
             if err is None:
                 log_path.write_text(text)
             else:
-                log_path.write_text(
-                    f"ERROR: failed to fetch trace after {MAX_RETRIES} retries\n{err}\n"
-                )
+                log_path.write_text(f"ERROR: failed to fetch trace after {MAX_RETRIES} retries\n{err}\n")
                 print(
                     f"warning: failed to fetch trace for job {job.id} ({job.name}): {err}",
                     file=sys.stderr,

@@ -1,4 +1,5 @@
 """glab-pipeline CLI."""
+
 from __future__ import annotations
 
 import argparse
@@ -68,8 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     inspect_parser.add_argument(
         "--output-dir",
         type=Path,
-        help="Directory to write dump files into "
-        "(default: $TMPDIR/glab-pipeline-<pid>-<timestamp>/).",
+        help="Directory to write dump files into (default: $TMPDIR/glab-pipeline-<pid>-<timestamp>/).",
     )
     inspect_parser.add_argument(
         "--full",

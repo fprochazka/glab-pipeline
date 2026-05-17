@@ -32,11 +32,7 @@ def _make(
         bridges=bridges,
         plan=plan,
         output_dir=output_dir,
-        job_log_paths=job_log_paths
-        or {
-            j.id: output_dir / "job-logs" / f"{j.stage}-{j.name}-{j.id}.log"
-            for j in jobs
-        },
+        job_log_paths=job_log_paths or {j.id: output_dir / "job-logs" / f"{j.stage}-{j.name}-{j.id}.log" for j in jobs},
         downstream_paths=downstream_paths or {},
         has_lint_file=has_lint_file,
         has_test_report_file=has_test_report_file,
@@ -44,9 +40,7 @@ def _make(
     )
 
 
-def test_green_pipeline_minimal_shape(
-    sample_pipeline_success, sample_job_success
-):
+def test_green_pipeline_minimal_shape(sample_pipeline_success, sample_job_success):
     p = parse_pipeline(sample_pipeline_success)
     jobs = [parse_job(sample_job_success)]
     d = build_summary_dict(_make(p, jobs))
@@ -70,25 +64,19 @@ def test_green_pipeline_minimal_shape(
     assert d["pipeline"]["sha_short"] == "a91957a"
 
 
-def test_yaml_broken_sets_yaml_errors_and_lint(
-    sample_pipeline_yaml_broken, tmp_path
-):
+def test_yaml_broken_sets_yaml_errors_and_lint(sample_pipeline_yaml_broken, tmp_path):
     p = parse_pipeline(sample_pipeline_yaml_broken)
     # write a real merged.yml so we can verify it's picked up
     (tmp_path / "merged.yml").write_text("hello: world\n")
     d = build_summary_dict(_make(p, has_lint_file=True, output_dir=tmp_path))
 
-    assert d["yaml_errors"] == (
-        "jobs:build config contains unknown keys: scriptz"
-    )
+    assert d["yaml_errors"] == ("jobs:build config contains unknown keys: scriptz")
     assert "lint" in d["files"]
     assert "merged_yaml" in d["files"]
     assert d["files"]["merged_yaml"].endswith("merged.yml")
 
 
-def test_script_failure_no_yaml_hint(
-    sample_pipeline_failed, sample_job_failed_script
-):
+def test_script_failure_no_yaml_hint(sample_pipeline_failed, sample_job_failed_script):
     p = parse_pipeline(sample_pipeline_failed)
     j = parse_job(sample_job_failed_script)
     d = build_summary_dict(_make(p, [j]))
@@ -104,9 +92,7 @@ def test_script_failure_no_yaml_hint(
     assert Path(entry["log"]).is_absolute()
 
 
-def test_missing_dep_has_yaml_hint(
-    sample_pipeline_failed, sample_job_failed_missing_dep
-):
+def test_missing_dep_has_yaml_hint(sample_pipeline_failed, sample_job_failed_missing_dep):
     p = parse_pipeline(sample_pipeline_failed)
     j = parse_job(sample_job_failed_missing_dep)
     d = build_summary_dict(_make(p, [j], has_lint_file=True))
@@ -116,9 +102,7 @@ def test_missing_dep_has_yaml_hint(
     assert "lint" in d["files"]
 
 
-def test_failed_downstream_with_detail_path(
-    sample_pipeline_failed, sample_bridge_failed
-):
+def test_failed_downstream_with_detail_path(sample_pipeline_failed, sample_bridge_failed):
     p = parse_pipeline(sample_pipeline_failed)
     b = parse_bridge(sample_bridge_failed)
     output_dir = Path("/tmp/g")
@@ -142,9 +126,7 @@ def test_failed_downstream_with_detail_path(
     assert Path(entry["detail"]).is_absolute()
 
 
-def test_failed_downstream_without_detail_is_null(
-    sample_pipeline_failed, sample_bridge_failed
-):
+def test_failed_downstream_without_detail_is_null(sample_pipeline_failed, sample_bridge_failed):
     p = parse_pipeline(sample_pipeline_failed)
     b = parse_bridge(sample_bridge_failed)
     d = build_summary_dict(_make(p, bridges=[b]))
@@ -153,9 +135,7 @@ def test_failed_downstream_without_detail_is_null(
     assert d["failed_downstream"][0]["detail"] is None
 
 
-def test_test_report_present(
-    sample_pipeline_failed, sample_job_failed_script
-):
+def test_test_report_present(sample_pipeline_failed, sample_job_failed_script):
     p = parse_pipeline(sample_pipeline_failed)
     j = parse_job(sample_job_failed_script)
     d = build_summary_dict(

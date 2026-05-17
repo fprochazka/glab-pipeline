@@ -59,9 +59,7 @@ def test_zero_jobs_triggers_lint(sample_pipeline_failed):
     assert plan.need_lint
 
 
-def test_script_failure_does_not_trigger_lint(
-    sample_pipeline_failed, sample_job_failed_script
-):
+def test_script_failure_does_not_trigger_lint(sample_pipeline_failed, sample_job_failed_script):
     p = parse_pipeline(sample_pipeline_failed)
     jobs = [parse_job(sample_job_failed_script)]
     plan = decide_extras(p, jobs, [])
@@ -69,9 +67,7 @@ def test_script_failure_does_not_trigger_lint(
     assert plan.yaml_hint_jobs == ()
 
 
-def test_missing_dependency_triggers_lint_and_hint(
-    sample_pipeline_failed, sample_job_failed_missing_dep
-):
+def test_missing_dependency_triggers_lint_and_hint(sample_pipeline_failed, sample_job_failed_missing_dep):
     p = parse_pipeline(sample_pipeline_failed)
     j = parse_job(sample_job_failed_missing_dep)
     plan = decide_extras(p, [j], [])
@@ -79,9 +75,7 @@ def test_missing_dependency_triggers_lint_and_hint(
     assert plan.yaml_hint_jobs == (j.id,)
 
 
-def test_failed_test_stage_job_triggers_report(
-    sample_pipeline_failed, sample_job_failed_script
-):
+def test_failed_test_stage_job_triggers_report(sample_pipeline_failed, sample_job_failed_script):
     # sample_job_failed_script has stage=test
     p = parse_pipeline(sample_pipeline_failed)
     j = parse_job(sample_job_failed_script)
@@ -92,16 +86,13 @@ def test_failed_test_stage_job_triggers_report(
 
 def test_failed_job_name_pytest_in_qa_stage_triggers_report(sample_pipeline_failed):
     p = parse_pipeline(sample_pipeline_failed)
-    j = _job(id=99, name="pytest-unit", stage="qa", status="failed",
-             failure_reason="script_failure")
+    j = _job(id=99, name="pytest-unit", stage="qa", status="failed", failure_reason="script_failure")
     plan = decide_extras(p, [j], [])
     assert plan.need_test_report
     assert plan.failed_test_jobs == (99,)
 
 
-def test_failed_bridge_triggers_downstream(
-    sample_pipeline_failed, sample_bridge_failed
-):
+def test_failed_bridge_triggers_downstream(sample_pipeline_failed, sample_bridge_failed):
     p = parse_pipeline(sample_pipeline_failed)
     b = parse_bridge(sample_bridge_failed)
     plan = decide_extras(p, [], [b])
