@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+import json
+import subprocess
+from typing import Any
+
+
+def _parse_paginated_json(text: str) -> list:
+    """Parse concatenated JSON arrays from glab api --paginate.
+
+    When paginating, glab concatenates one JSON array per page, e.g. '[...][...]'.
+    This parses each array and merges them into a single list.
+    """
+    decoder = json.JSONDecoder()
+    results: list = []
+    idx = 0
+    text = text.strip()
+    while idx < len(text):
+        obj, end = decoder.raw_decode(text, idx)
+        if isinstance(obj, list):
+            results.extend(obj)
+        else:
+            results.append(obj)
+        idx = end
+        # skip whitespace between concatenated values
+        while idx < len(text) and text[idx] in " \t\n\r":
+            idx += 1
+    return results
+
+
+class GlabApiError(Exception):
+    def __init__(self, message: str, stderr: str = "", returncode: int = 1):
+        super().__init__(message)
+        self.stderr = stderr
+        self.returncode = returncode
+
+
+def glab_api(
+    endpoint: str,
+    *,
+    method: str | None = None,
+    fields: dict[str, str] | None = None,
+    raw_fields: dict[str, str] | None = None,
+    json_body: dict | None = None,
+    hostname: str | None = None,
+    paginate: bool = False,
+) -> Any:
+    """Call glab api and return parsed JSON response."""
+    cmd = ["glab", "api", endpoint]
+    if method:
+        cmd.extend(["-X", method])
+    if hostname:
+        cmd.extend(["--hostname", hostname])
+    if paginate:
+        cmd.append("--paginate")
+    if fields:
+        for k, v in fields.items():
+            cmd.extend(["-F", f"{k}={v}"])
+    if raw_fields:
+        for k, v in raw_fields.items():
+            cmd.extend(["-f", f"{k}={v}"])
+
+    stdin_data = None
+    if json_body is not None:
+        cmd.extend(["--input", "-", "-H", "Content-Type: application/json"])
+        stdin_data = json.dumps(json_body)
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, input=stdin_data)
+    if result.returncode != 0:
+        raise GlabApiError(
+            f"glab api failed: {result.stderr.strip()}",
+            stderr=result.stderr,
+            returncode=result.returncode,
+        )
+
+    if not result.stdout.strip():
+        return None
+
+    if paginate:
+        return _parse_paginated_json(result.stdout)
+    return json.loads(result.stdout)
+
+
+def glab_mr_view_json(hostname: str | None = None) -> dict:
+    """Run glab mr view --output json to get current MR info."""
+    cmd = ["glab", "mr", "view", "--output", "json"]
+    if hostname:
+        cmd.extend(["--hostname", hostname])
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    if result.returncode != 0:
+        raise GlabApiError(
+            f"glab mr view failed: {result.stderr.strip()}",
+            stderr=result.stderr,
+            returncode=result.returncode,
+        )
+    return json.loads(result.stdout)
