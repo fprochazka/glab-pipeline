@@ -4,10 +4,15 @@ from pathlib import Path
 
 from glab_pipeline.commands.inspect import (
     SummaryInputs,
+    build_summary_dict,
     decide_extras,
     format_summary,
 )
 from glab_pipeline.models import parse_bridge, parse_job, parse_pipeline
+
+
+def _fmt(summary_inputs):
+    return format_summary(build_summary_dict(summary_inputs))
 
 
 def _make(
@@ -43,7 +48,7 @@ def _make(
 def test_green_summary_base_only(sample_pipeline_success, sample_job_success):
     p = parse_pipeline(sample_pipeline_success)
     jobs = [parse_job(sample_job_success)]
-    out = format_summary(_make(p, jobs))
+    out = _fmt(_make(p, jobs))
     assert "PIPELINE 47" in out
     assert "Files Created:" in out
     assert "All files in:" in out
@@ -55,7 +60,7 @@ def test_green_summary_base_only(sample_pipeline_success, sample_job_success):
 
 def test_yaml_broken_summary(sample_pipeline_yaml_broken):
     p = parse_pipeline(sample_pipeline_yaml_broken)
-    out = format_summary(_make(p, has_lint_file=True))
+    out = _fmt(_make(p, has_lint_file=True))
     assert "YAML Errors:" in out
     assert "  jobs:build config contains unknown keys: scriptz" in out
     assert "→ lint.json, merged.yml" in out
@@ -66,7 +71,7 @@ def test_script_failure_no_yaml_hint(
 ):
     p = parse_pipeline(sample_pipeline_failed)
     j = parse_job(sample_job_failed_script)
-    out = format_summary(_make(p, [j]))
+    out = _fmt(_make(p, [j]))
     assert "Failed Jobs (1):" in out
     assert "rspec:unit" in out
     assert "reason=script_failure" in out
@@ -79,7 +84,7 @@ def test_missing_dep_has_yaml_hint(
 ):
     p = parse_pipeline(sample_pipeline_failed)
     j = parse_job(sample_job_failed_missing_dep)
-    out = format_summary(_make(p, [j], has_lint_file=True))
+    out = _fmt(_make(p, [j], has_lint_file=True))
     assert "Failed Jobs (1):" in out
     assert "reason=missing_dependency_failure" in out
     assert "→ likely YAML/needs issue, see lint.json" in out
@@ -92,7 +97,7 @@ def test_failed_bridge_summary(
     b = parse_bridge(sample_bridge_failed)
     output_dir = Path("/tmp/g")
     detail_path = output_dir / "downstream" / "trigger-downstream-bad-9002.json"
-    out = format_summary(
+    out = _fmt(
         _make(
             p,
             bridges=[b],
@@ -109,7 +114,7 @@ def test_failed_bridge_summary(
 def test_test_report_counts(sample_pipeline_failed, sample_job_failed_script):
     p = parse_pipeline(sample_pipeline_failed)
     j = parse_job(sample_job_failed_script)
-    out = format_summary(
+    out = _fmt(
         _make(
             p,
             [j],
@@ -125,7 +130,7 @@ def test_test_report_without_totals_fallback(
 ):
     p = parse_pipeline(sample_pipeline_failed)
     j = parse_job(sample_job_failed_script)
-    out = format_summary(
+    out = _fmt(
         _make(p, [j], has_test_report_file=True, test_report={})
     )
     assert "Test failures present — see test-report.json" in out
@@ -143,7 +148,7 @@ def test_mixed_summary_all_sections_in_order(
         parse_job(sample_job_failed_missing_dep),
     ]
     b = parse_bridge(sample_bridge_failed)
-    out = format_summary(
+    out = _fmt(
         _make(
             p,
             jobs,
@@ -170,6 +175,6 @@ def test_bridges_listed_in_files_created(
 ):
     p = parse_pipeline(sample_pipeline_success)
     b = parse_bridge(sample_bridge_success)
-    out = format_summary(_make(p, bridges=[b]))
+    out = _fmt(_make(p, bridges=[b]))
     assert "Bridges:" in out
     assert "1 bridges" in out

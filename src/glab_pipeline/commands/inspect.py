@@ -13,6 +13,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from glab_pipeline.api import GlabApiError, glab_api
 from glab_pipeline.context import resolve_pipeline_context
@@ -132,85 +133,182 @@ def _format_duration(seconds: int | float | None) -> str:
     return f"{s}s"
 
 
-def format_summary(s: SummaryInputs) -> str:
+def build_summary_dict(s: SummaryInputs) -> dict[str, Any]:
+    """Build a canonical JSON-serializable summary dict from SummaryInputs.
+
+    This is the single source of truth for the summary; format_summary renders
+    a human-readable string from this dict.
+    """
     p = s.pipeline
-    lines: list[str] = []
+    output_dir = s.output_dir.resolve()
 
-    lines.append(f"PIPELINE {p.id} — status: {p.status}")
-    lines.append(f"URL:     {p.web_url}")
-    short_sha = (p.sha or "")[:7]
-    source = p.source or "unknown"
-    lines.append(f"Ref:     {p.ref}   SHA: {short_sha}   Source: {source}")
-    lines.append(
-        f"Created: {p.created_at}   Duration: {_format_duration(p.duration)}"
-    )
-    lines.append("")
-    lines.append("Files Created:")
-    lines.append(f"  Pipeline:   {s.output_dir}/pipeline.json")
-    lines.append(
-        f"  Jobs:       {s.output_dir}/jobs.json   "
-        f"({len(s.jobs)} jobs, all logs in job-logs/)"
-    )
+    # Files section: omit keys for files that weren't written.
+    files: dict[str, Any] = {
+        "pipeline": str(output_dir / "pipeline.json"),
+        "jobs": str(output_dir / "jobs.json"),
+        "jobs_count": len(s.jobs),
+    }
     if s.bridges:
-        lines.append(
-            f"  Bridges:    {s.output_dir}/bridges.json   "
-            f"({len(s.bridges)} bridges)"
+        files["bridges"] = str(output_dir / "bridges.json")
+        files["bridges_count"] = len(s.bridges)
+    if s.has_lint_file:
+        files["lint"] = str(output_dir / "lint.json")
+        merged_yml = output_dir / "merged.yml"
+        if merged_yml.exists():
+            files["merged_yaml"] = str(merged_yml)
+    if s.has_test_report_file:
+        files["test_report"] = str(output_dir / "test-report.json")
+
+    # Failed jobs
+    hint_set = set(s.plan.yaml_hint_jobs)
+    failed_jobs_list: list[dict[str, Any]] = []
+    for j in s.jobs:
+        if j.status != "failed":
+            continue
+        log_path = s.job_log_paths.get(j.id)
+        failed_jobs_list.append(
+            {
+                "id": j.id,
+                "name": j.name,
+                "stage": j.stage,
+                "failure_reason": j.failure_reason,
+                "log": str(log_path.resolve()) if log_path is not None else None,
+                "yaml_hint": j.id in hint_set,
+            }
         )
-    lines.append("")
-    lines.append(f"All files in: {s.output_dir}/")
 
-    # YAML errors / lint section
-    if p.yaml_errors:
-        lines.append("")
-        lines.append("YAML Errors:")
-        for ln in p.yaml_errors.splitlines() or [p.yaml_errors]:
-            lines.append(f"  {ln}")
-        lines.append("  → lint.json, merged.yml")
-    elif s.has_lint_file:
-        lines.append("")
-        lines.append("Lint result: see lint.json, merged.yml")
-
-    # Failed jobs section
-    failed_jobs = [j for j in s.jobs if j.status == "failed"]
-    if failed_jobs:
-        lines.append("")
-        lines.append(f"Failed Jobs ({len(failed_jobs)}):")
-        hint_set = set(s.plan.yaml_hint_jobs)
-        for j in failed_jobs:
-            reason = j.failure_reason or "—"
-            lines.append(f"  {j.name}  (stage={j.stage}, reason={reason})")
-            log_path = s.job_log_paths.get(j.id)
-            if log_path is not None:
-                lines.append(f"    Log: {log_path}")
-            if j.id in hint_set:
-                lines.append("    → likely YAML/needs issue, see lint.json")
-
-    # Failed downstream pipelines
+    # Failed downstream
     failed_bridge_ids = set(s.plan.failed_bridges)
-    failed_bridges = [b for b in s.bridges if b.id in failed_bridge_ids]
-    if failed_bridges:
-        lines.append("")
-        lines.append(f"Failed Downstream Pipelines ({len(failed_bridges)}):")
-        for b in failed_bridges:
-            dp = b.downstream_pipeline or {}
-            dpid = dp.get("id", "—")
-            dpstatus = dp.get("status", "—")
-            lines.append(
-                f"  {b.name} → pipeline {dpid} ({dpstatus})"
-            )
-            detail = s.downstream_paths.get(b.id)
-            if detail is not None:
-                lines.append(f"    Detail: {detail}")
+    failed_downstream_list: list[dict[str, Any]] = []
+    for b in s.bridges:
+        if b.id not in failed_bridge_ids:
+            continue
+        dp = b.downstream_pipeline or {}
+        detail = s.downstream_paths.get(b.id)
+        failed_downstream_list.append(
+            {
+                "bridge_id": b.id,
+                "bridge_name": b.name,
+                "downstream_pipeline_id": dp.get("id"),
+                "downstream_status": dp.get("status"),
+                "detail": str(detail.resolve()) if detail is not None else None,
+            }
+        )
 
     # Test failures
+    test_failures: dict[str, Any] | None = None
     if s.has_test_report_file:
         tr = s.test_report or {}
         total = tr.get("total") if isinstance(tr, dict) else None
         if isinstance(total, dict) and "failed" in total and "count" in total:
+            test_failures = {
+                "failed": total["failed"],
+                "total": total["count"],
+            }
+
+    return {
+        "pipeline": {
+            "id": p.id,
+            "status": p.status,
+            "url": p.web_url,
+            "ref": p.ref,
+            "sha": p.sha,
+            "sha_short": (p.sha or "")[:7],
+            "source": p.source,
+            "created_at": p.created_at,
+            "duration_seconds": p.duration,
+            "duration_human": _format_duration(p.duration),
+        },
+        "output_dir": str(output_dir),
+        "files": files,
+        "yaml_errors": p.yaml_errors,
+        "failed_jobs": failed_jobs_list,
+        "failed_downstream": failed_downstream_list,
+        "test_failures": test_failures,
+    }
+
+
+def format_summary(summary: dict[str, Any]) -> str:
+    """Render the canonical summary dict as human-readable text."""
+    p = summary["pipeline"]
+    files = summary["files"]
+    output_dir = summary["output_dir"]
+    lines: list[str] = []
+
+    lines.append(f"PIPELINE {p['id']} — status: {p['status']}")
+    lines.append(f"URL:     {p['url']}")
+    short_sha = p["sha_short"]
+    source = p["source"] or "unknown"
+    lines.append(f"Ref:     {p['ref']}   SHA: {short_sha}   Source: {source}")
+    lines.append(
+        f"Created: {p['created_at']}   Duration: {p['duration_human']}"
+    )
+    lines.append("")
+    lines.append("Files Created:")
+    lines.append(f"  Pipeline:   {files['pipeline']}")
+    lines.append(
+        f"  Jobs:       {files['jobs']}   "
+        f"({files['jobs_count']} jobs, all logs in job-logs/)"
+    )
+    if "bridges" in files:
+        lines.append(
+            f"  Bridges:    {files['bridges']}   "
+            f"({files['bridges_count']} bridges)"
+        )
+    lines.append("")
+    lines.append(f"All files in: {output_dir}/")
+
+    # YAML errors / lint section
+    yaml_errors = summary["yaml_errors"]
+    if yaml_errors:
+        lines.append("")
+        lines.append("YAML Errors:")
+        for ln in yaml_errors.splitlines() or [yaml_errors]:
+            lines.append(f"  {ln}")
+        lines.append("  → lint.json, merged.yml")
+    elif "lint" in files:
+        lines.append("")
+        lines.append("Lint result: see lint.json, merged.yml")
+
+    # Failed jobs section
+    failed_jobs = summary["failed_jobs"]
+    if failed_jobs:
+        lines.append("")
+        lines.append(f"Failed Jobs ({len(failed_jobs)}):")
+        for j in failed_jobs:
+            reason = j["failure_reason"] or "—"
+            lines.append(
+                f"  {j['name']}  (stage={j['stage']}, reason={reason})"
+            )
+            if j["log"] is not None:
+                lines.append(f"    Log: {j['log']}")
+            if j["yaml_hint"]:
+                lines.append("    → likely YAML/needs issue, see lint.json")
+
+    # Failed downstream pipelines
+    failed_downstream = summary["failed_downstream"]
+    if failed_downstream:
+        lines.append("")
+        lines.append(
+            f"Failed Downstream Pipelines ({len(failed_downstream)}):"
+        )
+        for d in failed_downstream:
+            dpid = d["downstream_pipeline_id"] if d["downstream_pipeline_id"] is not None else "—"
+            dpstatus = d["downstream_status"] if d["downstream_status"] is not None else "—"
+            lines.append(
+                f"  {d['bridge_name']} → pipeline {dpid} ({dpstatus})"
+            )
+            if d["detail"] is not None:
+                lines.append(f"    Detail: {d['detail']}")
+
+    # Test failures
+    if "test_report" in files:
+        tf = summary["test_failures"]
+        if tf is not None:
             lines.append("")
             lines.append(
-                f"Test Failures ({total['failed']} failed / "
-                f"{total['count']} total):"
+                f"Test Failures ({tf['failed']} failed / "
+                f"{tf['total']} total):"
             )
             lines.append("  See test-report.json")
         else:
@@ -433,7 +531,7 @@ def run(args: argparse.Namespace) -> int:
             job_log_paths[job.id] = log_path
 
     # 7. Build summary
-    summary = format_summary(
+    summary_dict = build_summary_dict(
         SummaryInputs(
             pipeline=pipeline,
             jobs=jobs,
@@ -447,6 +545,11 @@ def run(args: argparse.Namespace) -> int:
             test_report=test_report,
         )
     )
-    (output_dir / "summary.txt").write_text(summary)
-    print(summary, end="")
+    summary_json = json.dumps(summary_dict, indent=2, ensure_ascii=False)
+    (output_dir / "summary.json").write_text(summary_json + "\n")
+
+    if getattr(args, "json", False):
+        print(summary_json)
+    else:
+        print(format_summary(summary_dict), end="")
     return 0

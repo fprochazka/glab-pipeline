@@ -30,6 +30,7 @@ def test_inspect_help_lists_context_flags(capsys):
         "--hostname",
         "--output-dir",
         "--full",
+        "--json",
     ):
         assert flag in out
 
@@ -56,3 +57,17 @@ def test_inspect_dispatches_to_run_with_namespace():
     assert args.command == "inspect"
     assert args.full is False
     assert args.output_dir is None
+    assert args.json is False
+
+
+def test_inspect_json_flag_sets_true():
+    captured: dict[str, argparse.Namespace] = {}
+
+    def fake_run(args: argparse.Namespace) -> int:
+        captured["args"] = args
+        return 0
+
+    with patch("glab_pipeline.commands.inspect.run", side_effect=fake_run):
+        rc = cli.main(["inspect", "--pipeline-id", "42", "--json"])
+    assert rc == 0
+    assert captured["args"].json is True

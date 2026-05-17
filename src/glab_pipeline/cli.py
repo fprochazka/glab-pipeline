@@ -76,6 +76,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Force lint + downstream + test-report fetches unconditionally.",
     )
+    inspect_parser.add_argument(
+        "--json",
+        action="store_true",
+        help=(
+            "Print the structured summary JSON to stdout instead of the "
+            "human-readable text. summary.json is always written to the dump "
+            "dir regardless of this flag."
+        ),
+    )
     inspect_parser.set_defaults(func=_run_inspect)
 
     args = parser.parse_args(argv)

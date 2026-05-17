@@ -49,6 +49,7 @@ glab-pipeline inspect --pipeline-id 1234567        # plus --hostname/--project, 
 glab-pipeline inspect --mr-iid 42 --project g/r --hostname gitlab.com
 glab-pipeline inspect --output-dir /path/to/dir    # default: $TMPDIR/glab-pipeline-<pid>-<ts>/
 glab-pipeline inspect --full                       # force lint + downstream + test-report unconditionally
+glab-pipeline inspect --json | jq                  # print structured summary JSON to stdout (no human text)
 ```
 
 The dump directory always contains:
@@ -57,7 +58,7 @@ The dump directory always contains:
 - `jobs.json` — all jobs, including retried
 - `bridges.json` — trigger jobs to child/downstream pipelines (omitted if none)
 - `job-logs/<stage>-<name>-<id>.log` — **full trace for every job**, fetched in parallel
-- `summary.txt` — same content printed to stdout
+- `summary.json` — canonical structured summary (single source of truth); always written. Pass `--json` to print this to stdout instead of the human-readable text.
 
 And conditionally:
 
