@@ -8,7 +8,7 @@
     {
       "name": "glab-pipeline",
       "description": "Agent-friendly GitLab CI pipeline inspector — dumps full pipeline state and prints a problem-driven summary",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "author": {
         "name": "Filip Procházka",
         "url": "https://github.com/fprochazka"

@@ -5,8 +5,10 @@ from unittest.mock import patch
 
 import pytest
 
+from glab_pipeline.api import GlabApiError
 from glab_pipeline.context import (
     PipelineContext,
+    _extract_mr_iid_from_ref,
     _parse_mr_url,
     _parse_pipeline_url,
     resolve_pipeline_context,
@@ -244,3 +246,112 @@ class TestResolvePipelineContextFallback:
         args = _ns()
         with pytest.raises(ValueError, match="No pipeline found for current MR"):
             resolve_pipeline_context(args)
+
+
+class TestExtractMrIidFromRef:
+    def test_mr_ref(self) -> None:
+        assert _extract_mr_iid_from_ref("refs/merge-requests/42/head") == 42
+
+    def test_plain_branch(self) -> None:
+        assert _extract_mr_iid_from_ref("main") is None
+
+    def test_empty(self) -> None:
+        assert _extract_mr_iid_from_ref("") is None
+
+    def test_other_refs(self) -> None:
+        assert _extract_mr_iid_from_ref("refs/heads/main") is None
+        assert _extract_mr_iid_from_ref("refs/tags/v1.0") is None
+
+
+class TestBranchResolution:
+    @patch("glab_pipeline.context.glab_api")
+    def test_plain_branch_ref_sets_branch(self, mock_api, sample_pipeline_success: dict) -> None:
+        mock_api.side_effect = [{"id": 7}, sample_pipeline_success]
+        args = _ns(pipeline_url="https://gitlab.example.com/foo/bar/-/pipelines/47")
+        ctx = resolve_pipeline_context(args)
+        assert ctx.branch == "main"
+        # no extra MR fetch
+        assert mock_api.call_count == 2
+
+    @patch("glab_pipeline.context.glab_api")
+    def test_mr_ref_resolves_to_source_branch(
+        self,
+        mock_api,
+        sample_pipeline_failed: dict,
+        sample_mr_with_head_pipeline: dict,
+    ) -> None:
+        mr_pipeline = dict(sample_pipeline_failed)
+        mr_pipeline["ref"] = "refs/merge-requests/42/head"
+        mr_pipeline["source"] = "merge_request_event"
+        # project lookup, pipeline fetch, MR fetch for branch resolution
+        mock_api.side_effect = [{"id": 1}, mr_pipeline, sample_mr_with_head_pipeline]
+        args = _ns(pipeline_url="https://gitlab.example.com/foo/bar/-/pipelines/48")
+        ctx = resolve_pipeline_context(args)
+        assert ctx.branch == "feature/x"
+        assert mock_api.call_args_list[2].args == ("projects/1/merge_requests/42",)
+
+    @patch("glab_pipeline.context.glab_api")
+    def test_mr_ref_with_failed_mr_fetch_is_none(
+        self,
+        mock_api,
+        sample_pipeline_failed: dict,
+    ) -> None:
+        mr_pipeline = dict(sample_pipeline_failed)
+        mr_pipeline["ref"] = "refs/merge-requests/42/head"
+        mr_pipeline["source"] = "merge_request_event"
+        mock_api.side_effect = [
+            {"id": 1},
+            mr_pipeline,
+            GlabApiError("not found", stderr="", returncode=1),
+        ]
+        args = _ns(pipeline_url="https://gitlab.example.com/foo/bar/-/pipelines/48")
+        ctx = resolve_pipeline_context(args)
+        assert ctx.branch is None
+
+    @patch("glab_pipeline.context.glab_api")
+    def test_non_mr_event_with_refs_prefix_is_none(
+        self,
+        mock_api,
+        sample_pipeline_failed: dict,
+    ) -> None:
+        weird = dict(sample_pipeline_failed)
+        weird["ref"] = "refs/heads/something"
+        weird["source"] = "push"
+        mock_api.side_effect = [{"id": 1}, weird]
+        args = _ns(pipeline_url="https://gitlab.example.com/foo/bar/-/pipelines/48")
+        ctx = resolve_pipeline_context(args)
+        assert ctx.branch is None
+        # no MR fetch attempted
+        assert mock_api.call_count == 2
+
+    @patch("glab_pipeline.context.glab_api")
+    def test_mr_url_path_uses_source_branch(
+        self,
+        mock_api,
+        sample_mr_with_head_pipeline: dict,
+        sample_pipeline_failed: dict,
+    ) -> None:
+        mock_api.side_effect = [
+            {"id": 1},
+            sample_mr_with_head_pipeline,
+            sample_pipeline_failed,
+        ]
+        args = _ns(mr_url="https://gitlab.example.com/foo/bar/-/merge_requests/42")
+        ctx = resolve_pipeline_context(args)
+        assert ctx.branch == "feature/x"
+
+
+class TestPipelineContextBranchDefault:
+    def test_branch_has_default(self) -> None:
+        # Confirms existing callers don't break: branch is optional.
+        ctx = PipelineContext(
+            hostname="x",
+            project_id=1,
+            project_path="a/b",
+            pipeline_id=1,
+            pipeline_url="u",
+            sha="s",
+            ref="r",
+            pipeline_raw={},
+        )
+        assert ctx.branch is None

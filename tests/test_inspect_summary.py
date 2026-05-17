@@ -26,11 +26,10 @@ def _make(
     test_report=None,
     downstream_paths=None,
     job_log_paths=None,
-    full=False,
 ):
     jobs = jobs or []
     bridges = bridges or []
-    plan = decide_extras(pipeline, jobs, bridges, full=full)
+    plan = decide_extras(pipeline, jobs, bridges)
     return SummaryInputs(
         pipeline=pipeline,
         jobs=jobs,

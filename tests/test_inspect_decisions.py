@@ -115,12 +115,48 @@ def test_skipped_bridge_not_a_failure(sample_pipeline_failed):
     assert not plan.need_downstream
 
 
-def test_full_forces_all(sample_pipeline_success, sample_job_success):
+def test_force_lint_forces_lint(sample_pipeline_success, sample_job_success):
     p = parse_pipeline(sample_pipeline_success)
-    plan = decide_extras(p, [parse_job(sample_job_success)], [], full=True)
+    plan = decide_extras(p, [parse_job(sample_job_success)], [], force_lint=True)
     assert plan.need_lint
+    assert not plan.need_test_report
+    assert not plan.need_downstream
+
+
+def test_force_test_report_forces_test_report(sample_pipeline_success, sample_job_success):
+    p = parse_pipeline(sample_pipeline_success)
+    plan = decide_extras(p, [parse_job(sample_job_success)], [], force_test_report=True)
+    assert not plan.need_lint
     assert plan.need_test_report
+    assert not plan.need_downstream
+
+
+def test_force_downstream_forces_downstream_no_bridges(sample_pipeline_success, sample_job_success):
+    p = parse_pipeline(sample_pipeline_success)
+    plan = decide_extras(p, [parse_job(sample_job_success)], [], force_downstream=True)
+    assert not plan.need_lint
+    assert not plan.need_test_report
     assert plan.need_downstream
+    assert plan.downstream_bridges == ()
+
+
+def test_force_downstream_expands_to_all_bridges_with_downstream(sample_pipeline_success, sample_bridge_success):
+    p = parse_pipeline(sample_pipeline_success)
+    b = parse_bridge(sample_bridge_success)
+    plan = decide_extras(p, [], [b], force_downstream=True)
+    assert plan.need_downstream
+    # state-heuristic failed_bridges stays as-is (b is success → empty)
+    assert plan.failed_bridges == ()
+    # but downstream_bridges contains every bridge with a downstream_pipeline
+    assert plan.downstream_bridges == (b.id,)
+
+
+def test_downstream_bridges_matches_failed_when_not_forced(sample_pipeline_failed, sample_bridge_failed):
+    p = parse_pipeline(sample_pipeline_failed)
+    b = parse_bridge(sample_bridge_failed)
+    plan = decide_extras(p, [], [b])
+    assert plan.failed_bridges == (b.id,)
+    assert plan.downstream_bridges == (b.id,)
 
 
 def test_is_test_job_by_stage():

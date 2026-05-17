@@ -72,9 +72,22 @@ def main(argv: list[str] | None = None) -> int:
         help="Directory to write dump files into (default: $TMPDIR/glab-pipeline-<pid>-<timestamp>/).",
     )
     inspect_parser.add_argument(
-        "--full",
+        "--with-merged-ci-config",
         action="store_true",
-        help="Force lint + downstream + test-report fetches unconditionally.",
+        help=(
+            "Force a two-step lint that resolves include: against the source "
+            "branch (writes lint.json + merged.yml even when no state trigger fires)."
+        ),
+    )
+    inspect_parser.add_argument(
+        "--with-test-report",
+        action="store_true",
+        help="Force test-report fetch even when no failed test-stage job is present.",
+    )
+    inspect_parser.add_argument(
+        "--with-downstream-pipelines",
+        action="store_true",
+        help="Force downstream pipeline detail fetch for every bridge, not just failed ones.",
     )
     inspect_parser.add_argument(
         "--json",

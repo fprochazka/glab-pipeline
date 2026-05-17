@@ -33,7 +33,9 @@ glab-pipeline inspect --pipeline-url <url>             # full pipeline URL
 glab-pipeline inspect --pipeline-id <id>               # numeric pipeline ID (needs --project/--hostname)
 glab-pipeline inspect --mr-url <url>                   # MR URL — uses head_pipeline
 glab-pipeline inspect --mr-iid <iid>                   # MR IID (needs --project/--hostname)
-glab-pipeline inspect --full                           # force lint + test-report + downstream fetches
+glab-pipeline inspect --with-merged-ci-config          # two-step lint that resolves include: against source branch
+glab-pipeline inspect --with-test-report               # force test-report fetch
+glab-pipeline inspect --with-downstream-pipelines      # fetch downstream detail for every bridge
 ```
 
 Writes the dump to `$TMPDIR/glab-pipeline-<pipeline-id>-<timestamp>/` and prints
@@ -47,11 +49,11 @@ Always:
 - `job-logs/<stage>-<name>-<id>.log` — raw trace for every job
 - `summary.txt` — same problem-driven summary printed to stdout
 
-Conditional (or always with `--full`):
+Conditional (force individually with the `--with-*` flags):
 - `bridges.json` — present only if pipeline has child/downstream pipelines
-- `lint.json` + `merged.yml` — when pipeline has YAML errors, no jobs, or jobs failed with config/needs reasons
-- `test-report.json` — when failed jobs look like test jobs (stage or name matches test/spec/qa/pytest/jest/etc.)
-- `downstream/<bridge-name>-<dpid>.json` — for each failed bridge's downstream pipeline
+- `lint.json` + `merged.yml` — when pipeline has YAML errors, no jobs, or jobs failed with config/needs reasons. `--with-merged-ci-config` forces it and switches to a two-step lint (fetch raw `.gitlab-ci.yml` from the source branch, POST to `/ci/lint`) which correctly resolves `include:` against the source branch — useful when masked CI variables appear in include paths.
+- `test-report.json` — when failed jobs look like test jobs (stage or name matches test/spec/qa/pytest/jest/etc.). Forced by `--with-test-report`.
+- `downstream/<bridge-name>-<dpid>.json` — for each failed bridge's downstream pipeline. `--with-downstream-pipelines` fetches it for every bridge with a downstream pipeline.
 
 ## How to read the output
 

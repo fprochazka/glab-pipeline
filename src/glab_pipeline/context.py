@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import quote, urlparse
 
-from glab_pipeline.api import glab_api, glab_mr_view_json
+from glab_pipeline.api import GlabApiError, glab_api, glab_mr_view_json
 
 
 @dataclass(frozen=True)
@@ -18,10 +18,51 @@ class PipelineContext:
     sha: str
     ref: str
     pipeline_raw: dict
+    branch: str | None = None
 
 
 _PIPELINE_PATH_RE = re.compile(r"^/(.+)/-/pipelines/(\d+)/?$")
 _MR_PATH_RE = re.compile(r"^/(.+)/-/merge_requests/(\d+)/?$")
+_MR_REF_RE = re.compile(r"^refs/merge-requests/(\d+)/head$")
+
+
+def _extract_mr_iid_from_ref(ref: str) -> int | None:
+    """Parse a MR pipeline ref like 'refs/merge-requests/123/head' → 123."""
+    if not ref:
+        return None
+    m = _MR_REF_RE.match(ref)
+    return int(m.group(1)) if m else None
+
+
+def _resolve_branch_from_pipeline(
+    *,
+    hostname: str,
+    project_id: int,
+    pipeline_raw: dict,
+) -> str | None:
+    """Best-effort source branch resolution from a pipeline dict.
+
+    - Plain branch ref (no `refs/` prefix) → use it.
+    - `refs/merge-requests/N/head` + source `merge_request_event` → fetch MR,
+      use `source_branch`.
+    - Otherwise (or on MR fetch error) → None.
+    """
+    ref = pipeline_raw.get("ref") or ""
+    if ref and not ref.startswith("refs/"):
+        return ref
+    if pipeline_raw.get("source") == "merge_request_event":
+        mr_iid = _extract_mr_iid_from_ref(ref)
+        if mr_iid is not None:
+            try:
+                mr_data = glab_api(
+                    f"projects/{project_id}/merge_requests/{mr_iid}",
+                    hostname=hostname,
+                )
+            except GlabApiError:
+                return None
+            if isinstance(mr_data, dict):
+                return mr_data.get("source_branch")
+    return None
 
 
 def _parse_pipeline_url(url: str) -> tuple[str, str, int]:
@@ -56,6 +97,7 @@ def _build_pipeline_context(
     project_id: int,
     project_path: str,
     pipeline_raw: dict,
+    branch: str | None = None,
 ) -> PipelineContext:
     return PipelineContext(
         hostname=hostname,
@@ -66,6 +108,7 @@ def _build_pipeline_context(
         sha=pipeline_raw["sha"],
         ref=pipeline_raw["ref"],
         pipeline_raw=pipeline_raw,
+        branch=branch,
     )
 
 
@@ -94,11 +137,13 @@ def resolve_pipeline_context(args: argparse.Namespace) -> PipelineContext:
         project_data = glab_api(f"projects/{quote(project_path, safe='')}", hostname=hostname)
         project_id = project_data["id"]
         pipeline_raw = glab_api(f"projects/{project_id}/pipelines/{pipeline_id}", hostname=hostname)
+        branch = _resolve_branch_from_pipeline(hostname=hostname, project_id=project_id, pipeline_raw=pipeline_raw)
         return _build_pipeline_context(
             hostname=hostname,
             project_id=project_id,
             project_path=project_path,
             pipeline_raw=pipeline_raw,
+            branch=branch,
         )
 
     # 2. --pipeline-id
@@ -115,11 +160,13 @@ def resolve_pipeline_context(args: argparse.Namespace) -> PipelineContext:
             hostname, project_path = _project_path_from_web_url(mr_data["web_url"])
             project_id = mr_data["project_id"]
         pipeline_raw = glab_api(f"projects/{project_id}/pipelines/{pipeline_id}", hostname=hostname)
+        branch = _resolve_branch_from_pipeline(hostname=hostname, project_id=project_id, pipeline_raw=pipeline_raw)
         return _build_pipeline_context(
             hostname=hostname,
             project_id=project_id,
             project_path=project_path,
             pipeline_raw=pipeline_raw,
+            branch=branch,
         )
 
     # 3. --mr-url / --mr-iid
@@ -146,6 +193,7 @@ def resolve_pipeline_context(args: argparse.Namespace) -> PipelineContext:
             project_id=project_id,
             project_path=project_path,
             pipeline_raw=pipeline_raw,
+            branch=mr_data.get("source_branch"),
         )
 
     # 4. Fallback: auto-detect from current branch
@@ -163,4 +211,5 @@ def resolve_pipeline_context(args: argparse.Namespace) -> PipelineContext:
         project_id=project_id,
         project_path=project_path,
         pipeline_raw=pipeline_raw,
+        branch=mr_data.get("source_branch"),
     )

@@ -64,7 +64,9 @@ glab-pipeline inspect --pipeline-url <url>         # explicit pipeline
 glab-pipeline inspect --pipeline-id 1234567        # plus --hostname/--project, or auto-detect
 glab-pipeline inspect --mr-iid 42 --project g/r --hostname gitlab.com
 glab-pipeline inspect --output-dir /path/to/dir    # default: $TMPDIR/glab-pipeline-<pid>-<ts>/
-glab-pipeline inspect --full                       # force lint + downstream + test-report unconditionally
+glab-pipeline inspect --with-merged-ci-config      # two-step lint that resolves include: against source branch
+glab-pipeline inspect --with-test-report           # force test-report fetch even without failed test jobs
+glab-pipeline inspect --with-downstream-pipelines  # fetch downstream detail for every bridge, not just failed
 glab-pipeline inspect --json | jq                  # print structured summary JSON to stdout (no human text)
 ```
 
@@ -78,9 +80,9 @@ The dump directory always contains:
 
 And conditionally:
 
-- `lint.json` + `merged.yml` — when `yaml_errors` is set, the pipeline has 0 jobs, or any job's `failure_reason` hints at a config problem
-- `downstream/<bridge-name>-<dpid>.json` — when a bridge failed; one level deep
-- `test-report.json` — when a failed job is in a test stage (heuristic on stage/name)
+- `lint.json` + `merged.yml` — when `yaml_errors` is set, the pipeline has 0 jobs, or any job's `failure_reason` hints at a config problem. With `--with-merged-ci-config` this switches to a **two-step lint** that fetches the raw `.gitlab-ci.yml` from the source branch and POSTs it to `/ci/lint`, properly resolving `include:` (useful when masked CI variables appear in include paths).
+- `downstream/<bridge-name>-<dpid>.json` — when a bridge failed; one level deep. With `--with-downstream-pipelines` fetched for every bridge with a downstream pipeline.
+- `test-report.json` — when a failed job is in a test stage (heuristic on stage/name). Forced by `--with-test-report`.
 
 Use the summary first to find what failed and why, then read the relevant log/lint/test-report file directly.
 

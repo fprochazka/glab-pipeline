@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from glab_pipeline.api import GlabApiError, glab_api
 from glab_pipeline.context import resolve_pipeline_context
@@ -59,6 +60,10 @@ class ExtrasPlan:
     yaml_hint_jobs: tuple[int, ...]
     failed_test_jobs: tuple[int, ...]
     failed_bridges: tuple[int, ...]
+    # IDs of bridges to fetch downstream details for. Normally equals
+    # failed_bridges; under force_downstream this expands to every bridge
+    # with a non-null downstream_pipeline.
+    downstream_bridges: tuple[int, ...]
 
 
 def is_test_job(job: Job) -> bool:
@@ -71,16 +76,20 @@ def decide_extras(
     jobs: list[Job],
     bridges: list[Bridge],
     *,
-    full: bool = False,
+    force_lint: bool = False,
+    force_test_report: bool = False,
+    force_downstream: bool = False,
 ) -> ExtrasPlan:
     """Decide which conditional fetches to perform based on pipeline state."""
     yaml_hint_jobs = tuple(j.id for j in jobs if j.failure_reason in YAML_HINT_REASONS)
     failed_test_jobs = tuple(j.id for j in jobs if j.status == "failed" and is_test_job(j))
     failed_bridges = tuple(b.id for b in bridges if b.status not in _BRIDGE_OK_STATUSES)
 
-    need_lint = bool(full or pipeline.yaml_errors or len(jobs) == 0 or yaml_hint_jobs)
-    need_test_report = bool(full or failed_test_jobs)
-    need_downstream = bool(full or failed_bridges)
+    need_lint = bool(force_lint or pipeline.yaml_errors or len(jobs) == 0 or yaml_hint_jobs)
+    need_test_report = bool(force_test_report or failed_test_jobs)
+    need_downstream = bool(force_downstream or failed_bridges)
+
+    downstream_bridges = tuple(b.id for b in bridges if b.downstream_pipeline) if force_downstream else failed_bridges
 
     return ExtrasPlan(
         need_lint=need_lint,
@@ -89,6 +98,7 @@ def decide_extras(
         yaml_hint_jobs=yaml_hint_jobs,
         failed_test_jobs=failed_test_jobs,
         failed_bridges=failed_bridges,
+        downstream_bridges=downstream_bridges,
     )
 
 
@@ -294,13 +304,12 @@ def format_summary(summary: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _fetch_trace_raw(project_id: int, job_id: int, hostname: str | None) -> str:
-    """Fetch a job's trace via `glab api` subprocess (plain text endpoint).
+def _fetch_raw(endpoint: str, *, hostname: str | None = None) -> str:
+    """Fetch a raw (non-JSON) GitLab API endpoint via `glab api` subprocess.
 
-    Implements retry+backoff. Raises GlabApiError on final failure so the
-    caller can record the error in the per-job log file.
+    Implements retry+backoff. Raises GlabApiError on final failure.
     """
-    cmd = ["glab", "api", f"projects/{project_id}/jobs/{job_id}/trace"]
+    cmd = ["glab", "api", endpoint]
     if hostname:
         cmd.extend(["--hostname", hostname])
 
@@ -321,9 +330,14 @@ def _fetch_trace_raw(project_id: int, job_id: int, hostname: str | None) -> str:
             delay *= 2
 
     raise GlabApiError(
-        f"glab api trace failed after {MAX_RETRIES} retries: {last_stderr}",
+        f"glab api {endpoint} failed after {MAX_RETRIES} retries: {last_stderr}",
         stderr=last_stderr,
     )
+
+
+def _fetch_trace_raw(project_id: int, job_id: int, hostname: str | None) -> str:
+    """Fetch a job's trace via `glab api` subprocess (plain text endpoint)."""
+    return _fetch_raw(f"projects/{project_id}/jobs/{job_id}/trace", hostname=hostname)
 
 
 def _write_json(path: Path, data) -> None:
@@ -387,8 +401,17 @@ def run(args: argparse.Namespace) -> int:
     bridges = parse_bridges(bridges_raw)
 
     # 4. Decide extras
-    full = bool(getattr(args, "full", False))
-    plan = decide_extras(pipeline, jobs, bridges, full=full)
+    with_merged_ci_config = bool(getattr(args, "with_merged_ci_config", False))
+    with_test_report = bool(getattr(args, "with_test_report", False))
+    with_downstream_pipelines = bool(getattr(args, "with_downstream_pipelines", False))
+    plan = decide_extras(
+        pipeline,
+        jobs,
+        bridges,
+        force_lint=with_merged_ci_config,
+        force_test_report=with_test_report,
+        force_downstream=with_downstream_pipelines,
+    )
 
     # 5. Conditional fetches in parallel
     has_lint_file = False
@@ -398,7 +421,7 @@ def run(args: argparse.Namespace) -> int:
 
     bridges_by_id = {b.id: b for b in bridges}
 
-    def fetch_lint():
+    def fetch_lint_cheap():
         # dry_run_ref sets the branch/tag context used when simulating rules.
         # Skip it if pipeline.ref isn't a plain branch name (e.g.
         # `refs/merge-requests/N/head` for MR pipelines) — lint expects a
@@ -416,6 +439,52 @@ def run(args: argparse.Namespace) -> int:
             query=query,
             hostname=ctx.hostname,
         )
+
+    def fetch_lint_two_step():
+        """Two-step lint: fetch raw YAML, POST to /ci/lint with content+ref.
+
+        This resolves `include:` against the source branch (so masked CI
+        variables in include paths work). Falls back to the cheap GET on any
+        failure.
+        """
+        # Pick a branch ref: source branch wins, then ctx.ref if plain.
+        ref: str | None = ctx.branch
+        if not ref and ctx.ref and not ctx.ref.startswith("refs/"):
+            ref = ctx.ref
+        if not ref:
+            print(
+                "warning: --with-merged-ci-config: no source branch resolvable, falling back to cheap GET /ci/lint",
+                file=sys.stderr,
+            )
+            return fetch_lint_cheap()
+
+        try:
+            project_data = glab_api(f"projects/{ctx.project_id}", hostname=ctx.hostname)
+            ci_config_path = (project_data or {}).get("ci_config_path") or ".gitlab-ci.yml"
+            quoted_path = quote(ci_config_path, safe="")
+            raw_yaml = _fetch_raw(
+                f"projects/{ctx.project_id}/repository/files/{quoted_path}/raw?ref={quote(ref, safe='')}",
+                hostname=ctx.hostname,
+            )
+            return glab_api(
+                f"projects/{ctx.project_id}/ci/lint",
+                method="POST",
+                json_body={
+                    "content": raw_yaml,
+                    "dry_run": True,
+                    "ref": ref,
+                    "include_jobs": True,
+                },
+                hostname=ctx.hostname,
+            )
+        except (GlabApiError, Exception) as exc:  # noqa: BLE001
+            print(
+                f"warning: --with-merged-ci-config two-step lint failed ({exc}); falling back to cheap GET /ci/lint",
+                file=sys.stderr,
+            )
+            return fetch_lint_cheap()
+
+    fetch_lint = fetch_lint_two_step if with_merged_ci_config else fetch_lint_cheap
 
     def fetch_test_report():
         return glab_api(
@@ -442,7 +511,7 @@ def run(args: argparse.Namespace) -> int:
         if plan.need_test_report:
             futures[ex.submit(fetch_test_report)] = "test_report"
         if plan.need_downstream:
-            for bid in plan.failed_bridges:
+            for bid in plan.downstream_bridges:
                 b = bridges_by_id.get(bid)
                 if b is None or not b.downstream_pipeline:
                     continue
