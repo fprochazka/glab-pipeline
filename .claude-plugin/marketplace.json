@@ -1,0 +1,21 @@
+{
+  "name": "fprochazka-glab-pipeline",
+  "description": "GitLab CI pipeline inspector CLI with Claude Code skill for triaging failed pipelines",
+  "owner": {
+    "name": "Filip Procházka"
+  },
+  "plugins": [
+    {
+      "name": "glab-pipeline",
+      "description": "Agent-friendly GitLab CI pipeline inspector — dumps full pipeline state and prints a problem-driven summary",
+      "version": "0.1.0",
+      "author": {
+        "name": "Filip Procházka",
+        "url": "https://github.com/fprochazka"
+      },
+      "source": "./coding-agent-plugins/claude-code",
+      "category": "integration",
+      "homepage": "https://github.com/fprochazka/glab-pipeline"
+    }
+  ]
+}

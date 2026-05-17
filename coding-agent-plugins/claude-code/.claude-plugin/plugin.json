@@ -1,0 +1,11 @@
+{
+  "name": "glab-pipeline",
+  "version": "0.1.0",
+  "description": "Agent-friendly GitLab CI pipeline inspector — dumps full pipeline state and prints a problem-driven summary",
+  "author": {
+    "name": "Filip Prochazka"
+  },
+  "repository": "https://github.com/fprochazka/glab-pipeline",
+  "license": "MIT",
+  "keywords": ["gitlab", "ci", "pipeline", "merge-request"]
+}
