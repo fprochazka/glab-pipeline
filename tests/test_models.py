@@ -99,6 +99,21 @@ class TestParseJob:
         assert j.started_at is None
         assert j.finished_at is None
 
+    def test_parse_job_with_archive_artifact(self, sample_job_with_archive: dict) -> None:
+        j = parse_job(sample_job_with_archive)
+        assert j.has_archive_artifact is True
+        assert j.artifacts_expire_at == "2026-06-15T09:00:00.000Z"
+
+    def test_parse_job_with_only_junit_has_no_archive(self, sample_job_with_only_junit: dict) -> None:
+        j = parse_job(sample_job_with_only_junit)
+        assert j.has_archive_artifact is False
+        assert j.artifacts_expire_at == "2026-06-15T09:00:00.000Z"
+
+    def test_parse_job_without_artifacts(self, sample_job_success: dict) -> None:
+        j = parse_job(sample_job_success)
+        assert j.has_archive_artifact is False
+        assert j.artifacts_expire_at is None
+
     def test_parse_job_missing_optional_fields(self) -> None:
         minimal = {
             "id": 1,

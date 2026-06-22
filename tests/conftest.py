@@ -146,6 +146,50 @@ def sample_job_failed_missing_dep() -> dict:
 
 
 @pytest.fixture
+def sample_job_with_archive() -> dict:
+    return {
+        "id": 1005,
+        "name": "build:assets",
+        "stage": "build",
+        "status": "success",
+        "failure_reason": None,
+        "allow_failure": False,
+        "web_url": "https://gitlab.example.com/foo/bar/-/jobs/1005",
+        "duration": 30.0,
+        "started_at": "2026-05-16T09:00:30.000Z",
+        "finished_at": "2026-05-16T09:01:00.000Z",
+        "created_at": "2026-05-16T09:00:00.000Z",
+        "artifacts_expire_at": "2026-06-15T09:00:00.000Z",
+        "artifacts_file": {"filename": "artifacts.zip", "size": 4096},
+        "artifacts": [
+            {"file_type": "archive", "size": 4096, "filename": "artifacts.zip", "file_format": "zip"},
+            {"file_type": "metadata", "size": 128, "filename": "metadata.gz", "file_format": "gzip"},
+        ],
+    }
+
+
+@pytest.fixture
+def sample_job_with_only_junit() -> dict:
+    return {
+        "id": 1006,
+        "name": "rspec:report",
+        "stage": "test",
+        "status": "success",
+        "failure_reason": None,
+        "allow_failure": False,
+        "web_url": "https://gitlab.example.com/foo/bar/-/jobs/1006",
+        "duration": 10.0,
+        "started_at": "2026-05-16T09:02:00.000Z",
+        "finished_at": "2026-05-16T09:02:10.000Z",
+        "created_at": "2026-05-16T09:00:00.000Z",
+        "artifacts_expire_at": "2026-06-15T09:00:00.000Z",
+        "artifacts": [
+            {"file_type": "junit", "size": 256, "filename": "junit.xml.gz", "file_format": "gzip"},
+        ],
+    }
+
+
+@pytest.fixture
 def sample_bridge_success() -> dict:
     return {
         "id": 2001,

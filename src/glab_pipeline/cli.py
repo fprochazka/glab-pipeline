@@ -90,6 +90,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Force downstream pipeline detail fetch for every bridge, not just failed ones.",
     )
     inspect_parser.add_argument(
+        "--with-artefacts",
+        action="store_true",
+        help="Download and unpack each job's artifacts archive (one zip per job) into artifacts/<stage>-<name>-<id>/.",
+    )
+    inspect_parser.add_argument(
         "--json",
         action="store_true",
         help=(

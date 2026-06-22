@@ -12,7 +12,8 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
+import zipfile
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -64,11 +65,37 @@ class ExtrasPlan:
     # failed_bridges; under force_downstream this expands to every bridge
     # with a non-null downstream_pipeline.
     downstream_bridges: tuple[int, ...]
+    need_artefacts: bool
+    # IDs of jobs whose live (non-expired) archive artifact should be fetched.
+    artefact_jobs: tuple[int, ...]
 
 
 def is_test_job(job: Job) -> bool:
     """Heuristic: does this job look like a test job?"""
     return bool(TEST_STAGE_RE.search(job.stage) or TEST_NAME_RE.search(job.name))
+
+
+def _parse_iso8601(value: str) -> dt.datetime:
+    """Parse an ISO8601 timestamp, tolerating a trailing `Z` (UTC)."""
+    return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def artifact_is_live(job: Job, now: dt.datetime) -> bool:
+    """Whether a job has an archive artifact that hasn't expired as of `now`.
+
+    A null `artifacts_expire_at` means the artifact never expires. A timestamp
+    that can't be parsed is treated as live (better to attempt the download and
+    let a 404 skip it than to silently drop a possibly-present archive).
+    """
+    if not job.has_archive_artifact:
+        return False
+    if job.artifacts_expire_at is None:
+        return True
+    try:
+        expire_at = _parse_iso8601(job.artifacts_expire_at)
+    except ValueError:
+        return True
+    return expire_at >= now
 
 
 def decide_extras(
@@ -79,6 +106,8 @@ def decide_extras(
     force_lint: bool = False,
     force_test_report: bool = False,
     force_downstream: bool = False,
+    force_artefacts: bool = False,
+    now: dt.datetime | None = None,
 ) -> ExtrasPlan:
     """Decide which conditional fetches to perform based on pipeline state."""
     yaml_hint_jobs = tuple(j.id for j in jobs if j.failure_reason in YAML_HINT_REASONS)
@@ -91,6 +120,9 @@ def decide_extras(
 
     downstream_bridges = tuple(b.id for b in bridges if b.downstream_pipeline) if force_downstream else failed_bridges
 
+    selection_now = now or dt.datetime.now(dt.UTC)
+    artefact_jobs = tuple(j.id for j in jobs if artifact_is_live(j, selection_now)) if force_artefacts else ()
+
     return ExtrasPlan(
         need_lint=need_lint,
         need_test_report=need_test_report,
@@ -99,6 +131,8 @@ def decide_extras(
         failed_test_jobs=failed_test_jobs,
         failed_bridges=failed_bridges,
         downstream_bridges=downstream_bridges,
+        need_artefacts=force_artefacts,
+        artefact_jobs=artefact_jobs,
     )
 
 
@@ -119,6 +153,7 @@ class SummaryInputs:
     has_lint_file: bool
     has_test_report_file: bool
     test_report: dict | None
+    artefact_results: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _format_duration(seconds: int | float | None) -> str:
@@ -204,7 +239,7 @@ def build_summary_dict(s: SummaryInputs) -> dict[str, Any]:
                 "total": total["count"],
             }
 
-    return {
+    result: dict[str, Any] = {
         "pipeline": {
             "id": p.id,
             "status": p.status,
@@ -224,6 +259,17 @@ def build_summary_dict(s: SummaryInputs) -> dict[str, Any]:
         "failed_downstream": failed_downstream_list,
         "test_failures": test_failures,
     }
+
+    if s.plan.need_artefacts:
+        downloaded = sum(1 for r in s.artefact_results if r["status"] in ("ok", "empty"))
+        result["artifacts"] = {
+            "dir": "artifacts",
+            "jobs": s.artefact_results,
+            "downloaded": downloaded,
+            "skipped": len(s.artefact_results) - downloaded,
+        }
+
+    return result
 
 
 def format_summary(summary: dict[str, Any]) -> str:
@@ -296,6 +342,19 @@ def format_summary(summary: dict[str, Any]) -> str:
             lines.append("")
             lines.append("Test failures present — see test-report.json")
 
+    # Artifacts section (only when --with-artefacts was requested)
+    artifacts = summary.get("artifacts")
+    if artifacts is not None:
+        lines.append("")
+        lines.append(f"Artifacts (downloaded {artifacts['downloaded']} jobs, skipped {artifacts['skipped']}):")
+        for r in artifacts["jobs"]:
+            head = f"  {r['stage']}/{r['name']} (#{r['job_id']}):"
+            if r["status"] in ("ok", "empty"):
+                lines.append(f"{head} {r['file_count']} files, {_format_size(r['total_bytes'])} -> {r['dir']}/")
+            else:
+                reason = r["reason"] or r["status"]
+                lines.append(f"{head} skipped ({r['status']}: {reason})")
+
     return "\n".join(lines) + "\n"
 
 
@@ -340,6 +399,68 @@ def _fetch_trace_raw(project_id: int, job_id: int, hostname: str | None) -> str:
     return _fetch_raw(f"projects/{project_id}/jobs/{job_id}/trace", hostname=hostname)
 
 
+# Artifacts can be large; allow more time than the text endpoints.
+ARTIFACT_TIMEOUT = 180
+
+
+def _fetch_artifacts_zip(project_id: int, job_id: int, hostname: str | None, dest: Path) -> None:
+    """Download a job's artifacts archive (binary zip) to `dest` via `glab api`.
+
+    Streams stdout straight to the file in binary mode; `_fetch_raw` runs the
+    subprocess in text mode, which would corrupt the zip bytes. Retries with the
+    same backoff shape as `_fetch_raw`. Raises GlabApiError on final failure.
+    """
+    cmd = ["glab", "api", f"projects/{project_id}/jobs/{job_id}/artifacts"]
+    if hostname:
+        cmd.extend(["--hostname", hostname])
+
+    delay = INITIAL_RETRY_DELAY
+    last_stderr = ""
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            with dest.open("wb") as fh:
+                result = subprocess.run(cmd, stdout=fh, stderr=subprocess.PIPE, timeout=ARTIFACT_TIMEOUT)
+        except subprocess.TimeoutExpired as exc:
+            last_stderr = f"timeout after {ARTIFACT_TIMEOUT}s: {exc}"
+        else:
+            if result.returncode == 0:
+                return
+            last_stderr = (result.stderr or b"").decode(errors="replace").strip()
+        # A failed attempt may have written a partial body; drop it before retrying.
+        dest.unlink(missing_ok=True)
+        if attempt < MAX_RETRIES:
+            jitter = random.uniform(0, delay / 2)
+            time.sleep(delay + jitter)
+            delay *= 2
+
+    raise GlabApiError(
+        f"glab api projects/{project_id}/jobs/{job_id}/artifacts failed after {MAX_RETRIES} retries: {last_stderr}",
+        stderr=last_stderr,
+    )
+
+
+def _safe_extract_zip(zip_path: Path, dest_dir: Path) -> tuple[int, int]:
+    """Extract `zip_path` into `dest_dir`, rejecting members that escape it.
+
+    Returns (file_count, total_uncompressed_bytes). Raises zipfile.BadZipFile on
+    a corrupt archive and ValueError on a zip-slip member (caller catches both).
+    """
+    dest_root = dest_dir.resolve()
+    file_count = 0
+    total_bytes = 0
+    with zipfile.ZipFile(zip_path) as zf:
+        for member in zf.infolist():
+            target = (dest_dir / member.filename).resolve()
+            if target != dest_root and dest_root not in target.parents:
+                raise ValueError(f"zip member escapes destination: {member.filename!r}")
+            if member.is_dir():
+                continue
+            zf.extract(member, dest_dir)
+            file_count += 1
+            total_bytes += member.file_size
+    return file_count, total_bytes
+
+
 def _write_json(path: Path, data) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n")
 
@@ -348,8 +469,75 @@ def _job_log_name(job: Job) -> str:
     return f"{sanitize_filename_part(job.stage)}-{sanitize_filename_part(job.name)}-{job.id}.log"
 
 
+def _artifact_dir_name(job: Job) -> str:
+    return f"{sanitize_filename_part(job.stage)}-{sanitize_filename_part(job.name)}-{job.id}"
+
+
+def _format_size(num_bytes: int) -> str:
+    size = float(num_bytes)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if size < 1024 or unit == "GiB":
+            return f"{size:.0f}{unit}" if unit == "B" else f"{size:.1f}{unit}"
+        size /= 1024
+    return f"{size:.1f}GiB"
+
+
 def _downstream_filename(bridge: Bridge, dpid: int) -> str:
     return f"{sanitize_filename_part(bridge.name)}-{dpid}.json"
+
+
+def _download_one_artefact(job: Job, project_id: int, hostname: str | None, artifacts_dir: Path) -> dict[str, Any]:
+    """Download and unpack one job's archive; never raises (failures become a record)."""
+    rel_dir = f"artifacts/{_artifact_dir_name(job)}"
+    record: dict[str, Any] = {
+        "job_id": job.id,
+        "name": job.name,
+        "stage": job.stage,
+        "dir": rel_dir,
+        "file_count": 0,
+        "total_bytes": 0,
+        "status": "ok",
+        "reason": None,
+    }
+    job_dir = artifacts_dir / _artifact_dir_name(job)
+    job_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = job_dir / "_artifacts.zip"
+    try:
+        _fetch_artifacts_zip(project_id, job.id, hostname, zip_path)
+        file_count, total_bytes = _safe_extract_zip(zip_path, job_dir)
+        record["file_count"] = file_count
+        record["total_bytes"] = total_bytes
+        if file_count == 0:
+            record["status"] = "empty"
+    except GlabApiError as exc:
+        # A 404 here means the archive expired or was removed between the jobs
+        # fetch and now; not an error worth surfacing loudly.
+        stderr = (exc.stderr or "").lower()
+        if "404" in stderr or "not found" in stderr:
+            record["status"] = "missing/expired"
+        else:
+            record["status"] = "error"
+        record["reason"] = str(exc)
+    except (zipfile.BadZipFile, ValueError, OSError) as exc:
+        record["status"] = "error"
+        record["reason"] = str(exc)
+    finally:
+        zip_path.unlink(missing_ok=True)
+    return record
+
+
+def _download_all_artefacts(
+    jobs_by_id: dict[int, Job], job_ids: tuple[int, ...], project_id: int, hostname: str | None, output_dir: Path
+) -> list[dict[str, Any]]:
+    """Download every selected job's archive in parallel; returns per-job result records."""
+    selected = [jobs_by_id[jid] for jid in job_ids if jid in jobs_by_id]
+    if not selected:
+        return []
+    artifacts_dir = output_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_PARALLEL) as ex:
+        records = list(ex.map(lambda j: _download_one_artefact(j, project_id, hostname, artifacts_dir), selected))
+    return records
 
 
 # ---------------------------------------------------------------------------
@@ -404,6 +592,7 @@ def run(args: argparse.Namespace) -> int:
     with_merged_ci_config = bool(getattr(args, "with_merged_ci_config", False))
     with_test_report = bool(getattr(args, "with_test_report", False))
     with_downstream_pipelines = bool(getattr(args, "with_downstream_pipelines", False))
+    with_artefacts = bool(getattr(args, "with_artefacts", False))
     plan = decide_extras(
         pipeline,
         jobs,
@@ -411,6 +600,8 @@ def run(args: argparse.Namespace) -> int:
         force_lint=with_merged_ci_config,
         force_test_report=with_test_report,
         force_downstream=with_downstream_pipelines,
+        force_artefacts=with_artefacts,
+        now=dt.datetime.now(dt.UTC),
     )
 
     # 5. Conditional fetches in parallel
@@ -568,7 +759,15 @@ def run(args: argparse.Namespace) -> int:
                 )
             job_log_paths[job.id] = log_path
 
-    # 7. Build summary
+    # 7. Download + unpack artefacts (force-only)
+    artefact_results: list[dict[str, Any]] = []
+    if plan.need_artefacts:
+        jobs_by_id = {j.id: j for j in jobs}
+        artefact_results = _download_all_artefacts(
+            jobs_by_id, plan.artefact_jobs, ctx.project_id, ctx.hostname, output_dir
+        )
+
+    # 8. Build summary
     summary_dict = build_summary_dict(
         SummaryInputs(
             pipeline=pipeline,
@@ -581,6 +780,7 @@ def run(args: argparse.Namespace) -> int:
             has_lint_file=has_lint_file,
             has_test_report_file=has_test_report_file,
             test_report=test_report,
+            artefact_results=artefact_results,
         )
     )
     summary_json = json.dumps(summary_dict, indent=2, ensure_ascii=False)

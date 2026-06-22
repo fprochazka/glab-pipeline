@@ -36,6 +36,8 @@ class Job:
     started_at: str | None
     finished_at: str | None
     created_at: str | None
+    has_archive_artifact: bool  # True iff any artifacts[] entry has file_type == "archive"
+    artifacts_expire_at: str | None  # raw ISO8601 string or None
 
 
 @dataclass(frozen=True)
@@ -84,6 +86,8 @@ def parse_job(d: dict) -> Job:
         started_at=d.get("started_at"),
         finished_at=d.get("finished_at"),
         created_at=d.get("created_at"),
+        has_archive_artifact=any(a.get("file_type") == "archive" for a in d.get("artifacts") or []),
+        artifacts_expire_at=d.get("artifacts_expire_at"),
     )
 
 
