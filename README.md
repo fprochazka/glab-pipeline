@@ -35,7 +35,7 @@ uv tool install --editable .
 The repo includes a Claude Code plugin with:
 
 - a **skill** that teaches AI agents how to use `glab-pipeline`
-- a **PreToolUse hook** that blocks `glab ci view|get|trace`, raw `glab api .../pipelines/...|/jobs/.../trace|/ci/lint` calls, redirecting the agent to use `glab-pipeline inspect` instead. This keeps the agent reasoning over a structured dump rather than wrangling pipeline JSON across many uncoordinated API calls.
+- a **PreToolUse hook** that blocks six command shapes and redirects the agent to `glab-pipeline inspect` instead. This keeps the agent reasoning over a structured dump rather than wrangling pipeline JSON across many uncoordinated API calls.
 
 ```bash
 claude plugin marketplace add fprochazka/glab-pipeline
@@ -46,9 +46,25 @@ To upgrade after a new release:
 
 ```bash
 uv tool upgrade glab-pipeline
+uv tool install --force bash-classify
 claude plugin marketplace update fprochazka-glab-pipeline
 claude plugin update glab-pipeline@fprochazka-glab-pipeline
 ```
+
+The hook blocks:
+
+| Rule | Shape |
+|---|---|
+| `ci-view` | `glab ci view` |
+| `ci-get` | `glab ci get` |
+| `ci-trace` | `glab ci trace` |
+| `pipelines-api` | `glab api` against `projects/<id>/pipelines/<id>...` |
+| `job-trace-api` | `glab api` against `projects/<id>/jobs/<id>/trace` |
+| `ci-lint-api` | `glab api` against `projects/<id>/ci/lint` |
+
+The verdict comes from [`bash-classify`](https://github.com/fprochazka/bash-classify), which parses the command and reports which of those shapes it actually *invokes*. Text that merely names one — a heredoc body, an `echo` argument, a commit message, a `grep` pattern — is not an invocation and is allowed, while a wrapper (`sudo`, `timeout`, `bash -c`, `xargs`) does not hide one, and neither do glab's deprecated `pipe`/`pipeline` aliases for `ci`.
+
+Without bash-classify the hook still works, but in a degraded mode: it falls back to matching the raw command text. That is wrong in both directions — it denies anything that so much as mentions a blocked command, and it misses a real call it cannot see on a single line, such as `glab pipeline view 1000` or an endpoint written on a continuation line. Every deny issued that way says so in its reason, so the agent can tell you to install or upgrade the tool. A bash-classify between 0.10.0 and 0.11.0 is a quieter middle case: it runs full match mode, so none of the above applies, but it does not resolve the `pipe`/`pipeline` aliases, so those two spellings pass silently until you upgrade.
 
 ## Usage
 
@@ -92,6 +108,15 @@ Use the summary first to find what failed and why, then read the relevant log/li
 
 - [`glab` CLI](https://docs.gitlab.com/cli/) installed and authenticated
 - Python 3.12+
+
+The Claude Code plugin's hook additionally needs:
+
+- `jq`
+- [`bash-classify`](https://github.com/fprochazka/bash-classify) 0.11.0 or newer — strongly recommended. Without it the hook falls back to matching raw command text, which both blocks commands that only mention a blocked command in a heredoc or a commit message, and lets glab's `pipe`/`pipeline` aliases through.
+
+```bash
+uv tool install bash-classify
+```
 
 ## Development
 
