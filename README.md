@@ -64,7 +64,7 @@ The hook blocks:
 
 The verdict comes from [`bash-classify`](https://github.com/fprochazka/bash-classify), which parses the command and reports which of those shapes it actually *invokes*. Text that merely names one — a heredoc body, an `echo` argument, a commit message, a `grep` pattern — is not an invocation and is allowed, while a wrapper (`sudo`, `timeout`, `bash -c`, `xargs`) does not hide one, and neither do glab's deprecated `pipe`/`pipeline` aliases for `ci`.
 
-Without bash-classify the hook still works, but in a degraded mode: it falls back to matching the raw command text. That is wrong in both directions — it denies anything that so much as mentions a blocked command, and it misses a real call it cannot see on a single line, such as `glab pipeline view 1000` or an endpoint written on a continuation line. Every deny issued that way says so in its reason, so the agent can tell you to install or upgrade the tool. A bash-classify between 0.10.0 and 0.11.0 is a quieter middle case: it runs full match mode, so none of the above applies, but it does not resolve the `pipe`/`pipeline` aliases, so those two spellings pass silently until you upgrade.
+Without bash-classify the hook still works, but in a degraded mode: it falls back to matching the raw command text. That is wrong in both directions — it denies anything that so much as mentions a blocked command, and it misses real calls it cannot see: the pattern never knew glab's `pipe`/`pipeline` aliases, so `glab pipeline view 1000` passes, and a line-based pattern cannot see an endpoint written on a continuation line. Every deny issued that way says so in its reason, and a SessionStart hook says the same thing once at the start of a session, so the agent can tell you to install or upgrade the tool (plugin SessionStart hooks need Claude Code 2.1.257 or newer; versions 2.1.216 to 2.1.252 silently skipped them). A bash-classify between 0.10.0 and 0.11.0 is a quieter middle case: it runs full match mode, so none of the above applies, but it does not resolve the `pipe`/`pipeline` aliases, so those two spellings pass silently until you upgrade.
 
 ## Usage
 
@@ -112,7 +112,7 @@ Use the summary first to find what failed and why, then read the relevant log/li
 The Claude Code plugin's hook additionally needs:
 
 - `jq`
-- [`bash-classify`](https://github.com/fprochazka/bash-classify) 0.11.0 or newer — strongly recommended. Without it the hook falls back to matching raw command text, which both blocks commands that only mention a blocked command in a heredoc or a commit message, and lets glab's `pipe`/`pipeline` aliases through.
+- [`bash-classify`](https://github.com/fprochazka/bash-classify) 0.11.0 or newer. Without it the hook still runs, but falls back to matching raw command text, which both blocks commands that only mention a blocked command in a heredoc or a commit message, and lets glab's `pipe`/`pipeline` aliases through.
 
 ```bash
 uv tool install bash-classify
