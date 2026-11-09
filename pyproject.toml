@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "glab-pipeline"
 dynamic = ["version"]
-description = "Agent-friendly CLI for inspecting GitLab CI pipelines — dumps full pipeline state and prints a problem-driven summary."
+description = "Deprecated: the glab-pipeline command now ships in glab-cli-extras. This package installs it from there and prints a deprecation notice."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["gitlab", "pipeline", "ci", "cli", "merge-request"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 7 - Inactive",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
@@ -24,7 +24,9 @@ classifiers = [
     "Topic :: Software Development :: Version Control :: Git",
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = [
+    "glab-cli-extras>=0.3,<1",
+]
 
 [project.scripts]
 glab-pipeline = "glab_pipeline.cli:main"
