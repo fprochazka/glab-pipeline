@@ -36,6 +36,18 @@ The full reference is in the [glab-pipeline section of the glab-cli-extras READM
 
 ## Claude Code plugin
 
+> [!WARNING]
+> **This plugin is replaced by the `glab` plugin of glab-cli-extras**, which carries the `glab:glab-pipeline` skill and the same Bash guard. Uninstall this one first, so the two guards don't both run on every Bash call:
+>
+> ```bash
+> claude plugin uninstall glab-pipeline@fprochazka-glab-pipeline
+> claude plugin marketplace remove fprochazka-glab-pipeline
+> claude plugin marketplace add git@github.com:fprochazka/glab-cli-extras.git
+> claude plugin install glab@fprochazka-glab-cli-extras
+> ```
+>
+> The rest of this section describes the old plugin.
+
 The repo includes a Claude Code plugin with:
 
 - a **skill** that teaches AI agents how to use `glab-pipeline`

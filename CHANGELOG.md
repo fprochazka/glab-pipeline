@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 (unreleased)
+## 1.0.0 (2026-11-10)
 
 The `glab-pipeline` command moved into [glab-cli-extras](https://github.com/fprochazka/glab-cli-extras). This package no longer has code of its own: it depends on glab-cli-extras 0.3.0 or later, which provides the `glab-pipeline` command. Replace it:
 
